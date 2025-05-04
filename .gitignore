@@ -7,3 +7,6 @@ webchat-widget/node_modules/
 webchat-widget/coverage/
 webchat-widget/build/
 webchat-widget/dist/
+
+relay/relay
+processor/processor

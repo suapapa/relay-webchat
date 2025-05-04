@@ -7,7 +7,7 @@ interface Message {
   text: string
 }
 
-function App() {
+function App({ apiUrl = 'http://localhost:8087' }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
@@ -19,7 +19,6 @@ function App() {
     setMessages((prev) => [...prev, userMessage])
 
     try {
-      const apiUrl = process.env.CHATBOT_SERVER_ADDR || 'http://localhost:8080';
       const response = await axios.post(`${apiUrl}/chat`, { message: input });
       const botMessage: Message = { sender: 'bot', text: response.data.reply || 'No response' };
       setMessages((prev) => [...prev, botMessage]);
