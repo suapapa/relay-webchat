@@ -1,0 +1,9 @@
+.gitignore
+
+_ref
+
+# Webchat Widget
+webchat-widget/node_modules/
+webchat-widget/coverage/
+webchat-widget/build/
+webchat-widget/dist/
