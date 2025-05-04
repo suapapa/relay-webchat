@@ -18,4 +18,4 @@ COPY --from=builder /app/relay/app .
 
 EXPOSE 8080
 
-CMD ["./app", "-addr", ":8080"]
+ENTRYPOINT ["./app"]

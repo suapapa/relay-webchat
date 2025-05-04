@@ -7,7 +7,7 @@ interface Message {
   text: string
 }
 
-function App({ apiUrl = 'http://localhost:8087' }) {
+function App({ apiUrl = 'http://localhost:8080/chat' }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
@@ -19,7 +19,7 @@ function App({ apiUrl = 'http://localhost:8087' }) {
     setMessages((prev) => [...prev, userMessage])
 
     try {
-      const response = await axios.post(`${apiUrl}/chat`, { message: input });
+      const response = await axios.post(`${apiUrl}`, { message: input });
       const botMessage: Message = { sender: 'bot', text: response.data.reply || 'No response' };
       setMessages((prev) => [...prev, botMessage]);
     } catch (err) {
@@ -51,7 +51,11 @@ function App({ apiUrl = 'http://localhost:8087' }) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    sendMessage();
+                  }
+                }}
                 className="chatbot-input"
                 placeholder="Type your message..."
               />
