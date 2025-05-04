@@ -7,7 +7,7 @@ interface Message {
   text: string
 }
 
-function App({ apiUrl = 'http://localhost:8080/chat' }) {
+function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
@@ -65,7 +65,7 @@ function App({ apiUrl = 'http://localhost:8080/chat' }) {
         )}
         <button
           className="chatbot-toggle-btn"
-          style={{ bottom: open ? '510px' : '0' }}
+          style={{ bottom: open ? '510px' : '24px' }}
           onClick={() => setOpen((o) => !o)}
         >
           {open ? '×' : '🍀'}
