@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import axios from 'axios'
+import { marked } from 'marked'
 import './App.css'
 
 interface Message {
@@ -41,7 +42,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
             <div className="chatbot-messages">
               {messages.map((msg, idx) => (
                 <div key={idx} className={msg.sender === 'user' ? 'chatbot-message user' : 'chatbot-message bot'}>
-                  <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong> {msg.text}
+                  <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong> <span dangerouslySetInnerHTML={{ __html: marked(msg.text) }} />
                 </div>
               ))}
             </div>

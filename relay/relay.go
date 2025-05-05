@@ -39,14 +39,20 @@ func (r *Relay) ChatHandler(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	// tCh := time.After(2 * time.Second)
+
 	select {
 	case reply := <-msg.ReplyCh:
 		c.JSON(http.StatusOK, ChatResponse{
-			Reply: "Echo: " + reply,
+			Reply: reply,
 		})
+	// case <-tCh:
+	// 	c.JSON(http.StatusOK, ChatResponse{
+	// 		Reply: "Response will be provided within a maximum of 10 seconds.",
+	// 	})
 	case <-ctx.Done():
 		c.JSON(http.StatusRequestTimeout, ChatResponse{
-			Reply: "Request timeout",
+			Reply: "Apologies, I am unable to complete the request.",
 		})
 	}
 

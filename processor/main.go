@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -25,13 +26,16 @@ func main() {
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("Read error: %v", err)
-			break
+			time.Sleep(1 * time.Second)
+			continue
 		}
 
-		log.Printf("Received message: %s", string(message))
-		if err := conn.WriteMessage(messageType, append([]byte("processor: "), message...)); err != nil {
-			log.Printf("Write error: %v", err)
-			break
-		}
+		go func(msg string) {
+			log.Printf("Received message: %s", msg)
+			reply := "[대문](https://homin.dev)으로 돌아가기\n- item1\n- item2\n- item3"
+			if err := conn.WriteMessage(messageType, []byte(reply)); err != nil {
+				log.Printf("Write error: %v", err)
+			}
+		}(string(message))
 	}
 }

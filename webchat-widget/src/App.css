@@ -16,14 +16,23 @@
   overflow: hidden;
   padding: 2rem;
   font-family: Arial, sans-serif;
+  color: black;
 }
 
 .chatbot-title {
   margin: 0;
+  text-align: left;
+  font-family: 'Arial', sans-serif;
+  font-size: 1.5rem;
+  color: #333;
 }
 
 .chatbot-desc {
   margin-top: 0.5rem;
+  text-align: left;
+  font-family: 'Arial', sans-serif;
+  font-size: 1rem;
+  color: #666;
 }
 
 .chatbot-messages {
