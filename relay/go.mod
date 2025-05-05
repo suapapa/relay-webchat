@@ -1,4 +1,4 @@
-module github.com/suapapa/webchat
+module github.com/suapapa/relay-webchat/relay
 
 go 1.24.2
 
