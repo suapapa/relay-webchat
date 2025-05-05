@@ -3,7 +3,6 @@
   bottom: 24px;
   right: 24px;
   z-index: 1000;
-  font-size: 16px; /* 위젯 내 기본 폰트 크기 설정 */
 }
 
 .chatbot-widget {
@@ -16,8 +15,9 @@
   flex-direction: column;
   overflow: hidden;
   padding: 2rem;
-  font-family: Arial, sans-serif;
+  font-family: Arial, sans-serif !important;
   color: black;
+  font-size: 16px; /* 위젯 내 기본 폰트 크기 설정 */
 }
 
 .chatbot-title {
