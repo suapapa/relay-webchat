@@ -12,12 +12,11 @@ import (
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 	ollama_plugin "github.com/firebase/genkit/go/plugins/ollama"
-	"github.com/goccy/go-yaml"
 )
 
 type HominDevAI struct {
-	IntentFLow     *core.Flow[string, Cmd, struct{}]
-	SearchPostFlow *core.Flow[string, Result, struct{}]
+	IntentFLow *core.Flow[string, Cmd, struct{}]
+	// SearchPostFlow *core.Flow[string, Result, struct{}]
 
 	mu sync.Mutex
 }
@@ -59,64 +58,70 @@ func NewHominDevAI(ctx context.Context) (*HominDevAI, error) {
 			ret.mu.Lock()
 			defer ret.mu.Unlock()
 
-			s, _, err := genkit.GenerateData[Cmd](
-				ctx, g,
-				ai.WithSystem(intentSystemPrompt),
-				ai.WithPrompt(fmt.Sprintf(intentUserPromptFmt, input)),
-			)
-			if err != nil {
-				log.Printf("failed to judge intent: %s", err)
+			if flagFindIntent {
+				s, _, err := genkit.GenerateData[Cmd](
+					ctx, g,
+					ai.WithSystem(intentSystemPrompt),
+					ai.WithPrompt(fmt.Sprintf(intentUserPromptFmt, input)),
+				)
+				if err != nil {
+					log.Printf("failed to judge intent: %s", err)
+					return Cmd{"/search", []string{}}, nil
+				}
+				return *s, nil
+			} else {
 				return Cmd{"/search", []string{}}, nil
 			}
-			return *s, nil
 		},
 	)
 	ret.IntentFLow = intentFlow
 
-	searchPostFlow := genkit.DefineFlow(
-		g, "searchPostFlow",
-		func(ctx context.Context, input string) (Result, error) {
-			ret.mu.Lock()
-			defer ret.mu.Unlock()
+	/*
+		searchPostFlow := genkit.DefineFlow(
+			g, "searchPostFlow",
+			func(ctx context.Context, input string) (Result, error) {
+				ret.mu.Lock()
+				defer ret.mu.Unlock()
 
-			log.Printf("searchPostFlow: %s", input)
+				log.Printf("searchPostFlow: %s", input)
 
-			postCandidates, err := retrivePost(input, flagRetriveCnt)
-			if err != nil {
-				return Result{}, fmt.Errorf("failed to retrieve post: %w", err)
-			}
-
-			if len(postCandidates) == 0 {
-				log.Printf("no post candidates found")
-				return Result{}, nil
-			}
-
-			genkitDocs := make([]*ai.Document, 0, len(postCandidates))
-			for _, post := range postCandidates {
-				yamlPost, err := yaml.Marshal(post)
+				postCandidates, err := retrivePost(input, flagRetriveCnt)
 				if err != nil {
-					log.Printf("failed to marshal post: %s", err)
-					continue
+					return Result{}, fmt.Errorf("failed to retrieve post: %w", err)
 				}
-				genkitDocs = append(genkitDocs, &ai.Document{
-					Content: []*ai.Part{ai.NewTextPart(string(yamlPost))},
-				})
-			}
 
-			r, _, err := genkit.GenerateData[Result](
-				ctx, g,
-				ai.WithDocs(genkitDocs...),
-				ai.WithSystem(searchSystemPrompt),
-				ai.WithPrompt(fmt.Sprintf(searchUserPromptFmt, input)),
-			)
-			if err != nil {
-				return Result{}, fmt.Errorf("failed to generate search result: %w", err)
-			}
+				if len(postCandidates) == 0 {
+					log.Printf("no post candidates found")
+					return Result{}, nil
+				}
 
-			return *r, nil
-		},
-	)
-	ret.SearchPostFlow = searchPostFlow
+				genkitDocs := make([]*ai.Document, 0, len(postCandidates))
+				for _, post := range postCandidates {
+					yamlPost, err := yaml.Marshal(post)
+					if err != nil {
+						log.Printf("failed to marshal post: %s", err)
+						continue
+					}
+					genkitDocs = append(genkitDocs, &ai.Document{
+						Content: []*ai.Part{ai.NewTextPart(string(yamlPost))},
+					})
+				}
+
+				r, _, err := genkit.GenerateData[Result](
+					ctx, g,
+					ai.WithDocs(genkitDocs...),
+					ai.WithSystem(searchSystemPrompt),
+					ai.WithPrompt(fmt.Sprintf(searchUserPromptFmt, input)),
+				)
+				if err != nil {
+					return Result{}, fmt.Errorf("failed to generate search result: %w", err)
+				}
+
+				return *r, nil
+			},
+		)
+		ret.SearchPostFlow = searchPostFlow
+	*/
 
 	return ret, nil
 }

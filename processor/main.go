@@ -14,6 +14,7 @@ import (
 var (
 	flagWebSocketServer string
 	flagRetriveCnt      int
+	flagFindIntent      bool
 
 	hominDevAI *HominDevAI
 )
@@ -57,24 +58,13 @@ func main() {
 			var reply string
 			switch cmd.Action {
 			case "/search":
-				result, err := hominDevAI.SearchPostFlow.Run(context.Background(), msg)
+				posts, err := retrivePost(msg, flagRetriveCnt)
 				if err != nil {
-					log.Printf("Failed to run search post flow: %v", err)
+					log.Printf("Failed to retrive post: %v", err)
 					return
 				}
-
-				if len(result.Posts) == 0 {
-					reply = "검색 결과가 없어요."
-					break
-				}
-
-				// 중복제거. Url 이 같으면 하나만 출력
-				seen := make(map[string]bool)
-				for _, post := range result.Posts {
-					if !seen[post.Url] {
-						seen[post.Url] = true
-						reply += fmt.Sprintf("- [%s](%s)\n", post.Title, post.Url)
-					}
+				for _, post := range posts {
+					reply += fmt.Sprintf("- [%s](%s)\n", post.Title, post.Url)
 				}
 
 				reply = "검색 결과:\n" + strings.TrimRight(reply, "\n")
