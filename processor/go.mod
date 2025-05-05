@@ -4,9 +4,9 @@ go 1.24.2
 
 require (
 	github.com/firebase/genkit/go v0.5.3
-	github.com/goccy/go-yaml v1.17.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/suapapa/go_ragkit v0.2.10
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -25,6 +25,7 @@ require (
 	github.com/go-openapi/strfmt v0.23.0 // indirect
 	github.com/go-openapi/swag v0.23.1 // indirect
 	github.com/go-openapi/validate v0.24.0 // indirect
+	github.com/goccy/go-yaml v1.17.1 // indirect
 	github.com/google/dotprompt/go v0.0.0-20250424065700-61c578cf43ac // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
@@ -61,6 +62,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250428153025-10db94c68c34 // indirect
 	google.golang.org/grpc v1.72.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
