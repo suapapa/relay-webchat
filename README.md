@@ -24,14 +24,13 @@ npm run build
 ```
 
 웹페이지에 추가하기:
-1. `dist/webchat-widget.umd.js`과 `dist/webchat-widget.css` 을 적당한 곳에 호스팅.
+1. `dist/webchat-widget.umd.js`를 적당한 곳에 호스팅.
 2. `dist/index.html` 파일을 참고해 웹쳇 위젯을 추가할 페이지에 다음의 예제와 같이 추가.
 
 ```html
 </body>
   ...
   <script src="https://example.com/asset/script/webchat-widget.umd.js"></script>
-  <link rel="stylesheet" href="https://example.com/asset/css/webchat-widget.css" />
 </body>
 ```
 
