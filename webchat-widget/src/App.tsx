@@ -1,7 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 import { marked } from 'marked'
-import './App.css'
 
 interface Message {
   sender: 'user' | 'bot'
@@ -12,6 +11,13 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, open])
 
   const sendMessage = async () => {
     if (!input.trim()) return
@@ -36,8 +42,8 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
       <div className="chatbot-widget-container">
         {open && (
           <div className="chatbot-widget">
-            <h1 className="chatbot-title">Hello World!</h1>
-            <p className="chatbot-desc">This is a custom chatbot using a local backend.</p>
+            <h1 className="chatbot-title">🍀 블검봇</h1>
+            <p className="chatbot-desc">Chatbot for searching Homin Lee's Blog</p>
 
             <div className="chatbot-messages">
               {messages.map((msg, idx) => (
@@ -45,6 +51,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                   <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong> <span dangerouslySetInnerHTML={{ __html: marked(msg.text) }} />
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="chatbot-input-row">

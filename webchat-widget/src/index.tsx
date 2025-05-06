@@ -1,7 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import './App.css'
 
 // 전역 window 객체에 renderWebchatWidget 함수 타입 선언
 declare global {
@@ -18,6 +17,8 @@ style.textContent = `
         bottom: 20px;
         right: 20px;
         z-index: 1000;
+        max-width: 100vw;
+        max-height: 100vh;
     }
     .chatbot-widget {
         background: white;
@@ -26,8 +27,11 @@ style.textContent = `
         padding: 20px;
         width: 300px;
         height: 400px;
+        max-width: 95vw;
+        max-height: 80vh;
         display: flex;
         flex-direction: column;
+        box-sizing: border-box;
     }
     .chatbot-messages {
         flex: 1;
@@ -43,6 +47,7 @@ style.textContent = `
         padding: 8px;
         border: 1px solid #ddd;
         border-radius: 4px;
+        font-size: 16px !important;
     }
     .chatbot-send-btn {
         padding: 8px 16px;
@@ -67,35 +72,195 @@ style.textContent = `
         z-index: 1001;
         transition: bottom 0.3s ease;
     }
+
+    @media (max-width: 600px) {
+        #webchat-widget-container {
+            bottom: 0;
+            right: 0;
+            left: 0;
+            width: 100vw;
+            max-width: 100vw;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            overflow-x: hidden;
+        }
+        .chatbot-widget {
+            width: 92vw;
+            max-width: 380px;
+            min-width: 0;
+            height: 70vh;
+            max-height: 80vh;
+            border-radius: 16px;
+            padding: 8px;
+            margin: 0 auto 8px auto;
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+        .chatbot-toggle-btn {
+            bottom: 16px;
+            right: 16px;
+            width: 48px;
+            height: 48px;
+            font-size: 22px;
+        }
+    }
 `;
 document.head.appendChild(style);
 
-// 컨테이너 생성
-function ensureWidgetContainer() {
+// 컨테이너 생성 (ShadowRoot 지원)
+function ensureWidgetContainerWithShadow() {
     let container = document.getElementById('webchat-widget-container');
     if (!container) {
         container = document.createElement('div');
         container.id = 'webchat-widget-container';
         document.body.appendChild(container);
     }
-    let root = document.getElementById('webchat-root');
+    // ShadowRoot 생성
+    let shadowRoot = (container as any).shadowRoot;
+    if (!shadowRoot) {
+        shadowRoot = container.attachShadow({ mode: 'open' });
+    }
+    // ShadowRoot 내부에 root div 생성
+    let root = shadowRoot.getElementById('webchat-root');
     if (!root) {
         root = document.createElement('div');
         root.id = 'webchat-root';
-        container.appendChild(root);
+        shadowRoot.appendChild(root);
+    }
+    // App.css를 ShadowRoot에 style로 삽입
+    if (!shadowRoot.getElementById('webchat-style')) {
+        const styleTag = document.createElement('style');
+        styleTag.id = 'webchat-style';
+        styleTag.textContent = `
+.chatbot-widget-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1000;
+}
+
+.chatbot-widget {
+  width: 350px;
+  height: 500px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 2rem;
+  font-family: Arial, sans-serif !important;
+  color: black;
+  font-size: 16px;
+}
+
+.chatbot-title {
+  margin: 0;
+  text-align: left;
+  font-family: 'Arial', sans-serif !important;
+  font-size: 1.5rem !important;
+  font-weight: bold !important;
+  color: #333 !important;
+}
+
+.chatbot-desc {
+  margin-top: 0.5rem;
+  text-align: left;
+  font-family: 'Arial', sans-serif !important;
+  font-size: 1rem !important;
+  color: #666 !important;
+}
+
+.chatbot-messages {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 1rem;
+  height: 300px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+  flex: 1;
+  background: #fafafa;
+}
+
+.chatbot-message {
+  margin: 0.5rem 0;
+}
+
+.chatbot-message.user {
+  text-align: right;
+}
+
+.chatbot-message.bot {
+  text-align: left;
+}
+
+.chatbot-input-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chatbot-input {
+  flex: 1;
+  padding: 0.5rem;
+  background: #fafafa !important;
+  color: black !important;
+  font-size: 16px !important;
+}
+
+.chatbot-send-btn {
+  padding: 0.5rem 1rem;
+  background: #2e8b57;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chatbot-toggle-btn {
+  position: absolute;
+  right: 0;
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  background: #2e8b57;
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  cursor: pointer;
+  font-size: 24px;
+  transition: bottom 0.2s;
+}
+
+@media (max-width: 600px) {
+  .chatbot-widget {
+    width: 92vw !important;
+    max-width: 380px !important;
+    min-width: 0 !important;
+    height: 70vh !important;
+    max-height: 80vh !important;
+    border-radius: 16px !important;
+    padding: 8px !important;
+    margin: 0 auto 8px auto !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+}
+`;
+        shadowRoot.appendChild(styleTag);
     }
     return root;
 }
 
-// 전역 함수로 React 앱 렌더링 함수 노출
+// 전역 함수로 React 앱 렌더링 함수 노출 (ShadowRoot 지원)
 window.renderWebchatWidget = (container?: HTMLElement) => {
-    const target = container || ensureWidgetContainer();
-    const root = ReactDOM.createRoot(target)
+    const target = container || ensureWidgetContainerWithShadow();
+    const root = ReactDOM.createRoot(target);
     root.render(
         <React.StrictMode>
             <App />
         </React.StrictMode>
-    )
+    );
 }
 
 // 자동 실행: 페이지에 위젯 컨테이너가 없으면 자동으로 렌더링
