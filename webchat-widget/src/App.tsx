@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 import { marked } from 'marked'
 
@@ -11,6 +11,13 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, open])
 
   const sendMessage = async () => {
     if (!input.trim()) return
@@ -44,6 +51,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                   <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong> <span dangerouslySetInnerHTML={{ __html: marked(msg.text) }} />
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="chatbot-input-row">
