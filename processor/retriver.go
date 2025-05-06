@@ -8,7 +8,6 @@ import (
 
 	ragkit "github.com/suapapa/go_ragkit"
 	ragkit_helper "github.com/suapapa/go_ragkit/helper"
-	"gopkg.in/yaml.v2"
 )
 
 var vstorePhrases ragkit.VectorStore
@@ -64,8 +63,8 @@ func retrivePost(prompt string, cnt int) ([]*Post, error) {
 	}
 	sort.Sort(posts)
 
-	yb, _ := yaml.Marshal(posts)
-	log.Println(string(yb))
+	// yb, _ := yaml.Marshal(posts)
+	// log.Println(string(yb))
 
 	return posts, nil
 }

@@ -60,6 +60,7 @@ func main() {
 					log.Printf("Failed to run intent flow: %v", err)
 					return
 				}
+				log.Printf("Command: %s", cmd)
 
 				switch cmd.Action {
 				case "/keyword":
