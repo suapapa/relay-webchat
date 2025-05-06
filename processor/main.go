@@ -82,7 +82,7 @@ func main() {
 					reply = strings.Join(cmd.Args, "\n")
 				default:
 					log.Printf("Unknown command: %s", cmd.Action)
-					reply = "ABOUT - TBU"
+					reply = makeAboutReply()
 				}
 			}
 
@@ -97,7 +97,19 @@ func makePostReply(posts []*Post) string {
 	// reply := "검색 결과:\n"
 	var reply string
 	for _, post := range posts {
-		reply += fmt.Sprintf("- [%s](%s)\n", post.Title, post.Url)
+		reply += fmt.Sprintf("- [%s](%s) - %s\n", post.Title, post.Url, strings.Join(post.Texts, ","))
 	}
 	return reply
+}
+
+func makeAboutReply() string {
+	siteURL := `https://homin.dev/blog/post/20250507_rag_blog_search_webchat_got/`
+
+	return fmt.Sprintf(
+		`내 이름은 **블검봇**.
+
+Homin Lee's blog를 검색합니다. 편하게 물어보세요.
+제가 만들어진 내용은 [여기](%s)에 있습니다.`,
+		siteURL,
+	)
 }

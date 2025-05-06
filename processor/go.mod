@@ -6,7 +6,6 @@ require (
 	github.com/firebase/genkit/go v0.5.3
 	github.com/gorilla/websocket v1.5.3
 	github.com/suapapa/go_ragkit v0.2.10
-	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -62,5 +61,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250428153025-10db94c68c34 // indirect
 	google.golang.org/grpc v1.72.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
