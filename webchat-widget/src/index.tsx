@@ -17,6 +17,8 @@ style.textContent = `
         bottom: 20px;
         right: 20px;
         z-index: 1000;
+        max-width: 100vw;
+        max-height: 100vh;
     }
     .chatbot-widget {
         background: white;
@@ -25,8 +27,11 @@ style.textContent = `
         padding: 20px;
         width: 300px;
         height: 400px;
+        max-width: 95vw;
+        max-height: 80vh;
         display: flex;
         flex-direction: column;
+        box-sizing: border-box;
     }
     .chatbot-messages {
         flex: 1;
@@ -65,6 +70,31 @@ style.textContent = `
         cursor: pointer;
         z-index: 1001;
         transition: bottom 0.3s ease;
+    }
+
+    @media (max-width: 600px) {
+        #webchat-widget-container {
+            bottom: 0;
+            right: 0;
+            left: 0;
+            width: 100vw;
+            max-width: 100vw;
+        }
+        .chatbot-widget {
+            width: 100vw;
+            height: 60vh;
+            max-width: 100vw;
+            max-height: 80vh;
+            border-radius: 0 0 8px 8px;
+            padding: 10px;
+        }
+        .chatbot-toggle-btn {
+            bottom: 16px;
+            right: 16px;
+            width: 48px;
+            height: 48px;
+            font-size: 22px;
+        }
     }
 `;
 document.head.appendChild(style);
