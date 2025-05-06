@@ -35,8 +35,8 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
       <div className="chatbot-widget-container">
         {open && (
           <div className="chatbot-widget">
-            <h1 className="chatbot-title">Hello World!</h1>
-            <p className="chatbot-desc">This is a custom chatbot using a local backend.</p>
+            <h1 className="chatbot-title">🍀 블검봇</h1>
+            <p className="chatbot-desc">Chatbot for searching Homin Lee's Blog</p>
 
             <div className="chatbot-messages">
               {messages.map((msg, idx) => (
