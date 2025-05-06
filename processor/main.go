@@ -70,14 +70,14 @@ func main() {
 						log.Printf("Failed to retrive post for keywords, %s: %v", searchKeywords, err)
 						return
 					}
-					reply = makePostReply(posts)
+					reply = fmt.Sprintf("%s 에 대한 검색 결과:\n%s", searchKeywords, makePostReply(posts))
 				case "/search":
 					posts, err := retrivePost(msg, flagRetriveCnt)
 					if err != nil {
 						log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
 						return
 					}
-					reply = makePostReply(posts)
+					reply = "검색 결과:\n" + makePostReply(posts)
 				case "/smallchat":
 					reply = strings.Join(cmd.Args, "\n")
 				default:
@@ -94,7 +94,8 @@ func main() {
 }
 
 func makePostReply(posts []*Post) string {
-	reply := "검색 결과:\n"
+	// reply := "검색 결과:\n"
+	var reply string
 	for _, post := range posts {
 		reply += fmt.Sprintf("- [%s](%s)\n", post.Title, post.Url)
 	}
