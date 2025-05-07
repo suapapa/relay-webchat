@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
 	"time"
 
@@ -27,75 +29,120 @@ func main() {
 
 	log.Printf("WebSocket server: %s", flagWebSocketServer)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var err error
-	hominDevAI, err = NewHominDevAI(context.Background())
+	hominDevAI, err = NewHominDevAI(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create HominDevAI: %v", err)
 	}
 
-	conn, _, err := websocket.DefaultDialer.Dial(flagWebSocketServer, nil)
-	if err != nil {
-		log.Fatalf("Failed to connect to WebSocket server: %v", err)
+	var conn *websocket.Conn
+	connectWS := func() error {
+		var err error
+		conn, _, err = websocket.DefaultDialer.Dial(flagWebSocketServer, nil)
+		if err != nil {
+			return fmt.Errorf("failed to connect to WebSocket server: %v", err)
+		}
+		return nil
+	}
+
+	if err := connectWS(); err != nil {
+		log.Fatalf("%v", err)
 	}
 	defer conn.Close()
 
+	// get ctrl-c
+	chCtrlC := make(chan os.Signal, 1)
+	signal.Notify(chCtrlC, os.Interrupt)
+
 	errRetryCnt := 0
 	for {
-		msgType, msgBytes, err := conn.ReadMessage()
-		if err != nil {
-			log.Printf("Read error: %v", err)
-			time.Sleep(1 * time.Second)
-			errRetryCnt++
-			if errRetryCnt > 3 {
-				log.Fatalf("Failed to read message: %v", err)
-			}
-			continue
-		}
-		errRetryCnt = 0
-
-		msg := string(msgBytes)
-		var reply string
-		if len([]rune(msg)) > 200 {
-			log.Printf("Message is too long: %d", len([]rune(msg)))
-			reply = "메시지가 너무 길어요. 200자 이하로 짧게 줄여주세요."
-		} else {
-			log.Printf("Received message: %s", msg)
-
-			cmd, err := hominDevAI.PreProcessFLow.Run(context.Background(), msg)
+		select {
+		case <-chCtrlC:
+			log.Println("Ctrl-C pressed, exiting...")
+			return
+		case <-ctx.Done():
+			log.Println("Context canceled, exiting...")
+			return
+		default:
+			// Set a read deadline of 5 seconds
+			// if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			// 	log.Printf("Failed to set read deadline: %v", err)
+			// 	continue
+			// }
+			msgType, msgBytes, err := conn.ReadMessage()
 			if err != nil {
-				log.Printf("Failed to run intent flow: %v", err)
-				return
-			}
-			log.Printf("Command: %s", cmd)
+				// 타임아웃 에러 처리
+				if os.IsTimeout(err) || websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+					// Try to reconnect
+					if err := connectWS(); err != nil {
+						log.Fatalf("Failed to reconnect: %v", err)
+					}
+					// log.Println("Successfully reconnected")
+					continue
+				}
 
-			switch cmd.Action {
-			case "/keyword":
-				searchKeywords := strings.Join(cmd.Args, ",")
-				posts, err := retrivePost(searchKeywords, flagRetriveCnt)
+				log.Printf("Connection error: %v", err)
+				time.Sleep(1 * time.Second)
+				errRetryCnt++
+				if errRetryCnt > 3 {
+					log.Fatalf("Failed to reconnect after 3 attempts: %v", err)
+				}
+			}
+			errRetryCnt = 0
+
+			msg := string(msgBytes)
+			var reply string
+			if len([]rune(msg)) > 200 {
+				log.Printf("Message is too long: %d", len([]rune(msg)))
+				reply = "메시지가 너무 길어요. 200자 이하로 짧게 줄여주세요."
+			} else {
+				log.Printf("Received message: %s", msg)
+
+				cmd, err := hominDevAI.PreProcessFLow.Run(context.Background(), msg)
 				if err != nil {
-					log.Printf("Failed to retrive post for keywords, %s: %v", searchKeywords, err)
+					log.Printf("Failed to run intent flow: %v", err)
 					return
 				}
-				reply = fmt.Sprintf("%s 에 대한 검색 결과:\n%s", searchKeywords, makePostReply(posts))
-			case "/search":
-				posts, err := retrivePost(msg, flagRetriveCnt)
-				if err != nil {
-					log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
-					return
-				}
-				reply = "검색 결과:\n" + makePostReply(posts)
-			case "/smallchat":
-				reply = strings.Join(cmd.Args, "\n")
-			default:
-				log.Printf("Unknown command: %s", cmd.Action)
-				reply = makeAboutReply()
-			}
-		}
+				log.Printf("Command: %s", cmd)
 
-		if err := conn.WriteMessage(msgType, []byte(reply)); err != nil {
-			log.Printf("Write error: %v", err)
+				switch cmd.Action {
+				case "/keyword":
+					searchKeywords := strings.Join(cmd.Args, ",")
+					posts, err := retrivePost(searchKeywords, flagRetriveCnt)
+					if err != nil {
+						log.Printf("Failed to retrive post for keywords, %s: %v", searchKeywords, err)
+						return
+					}
+					reply = fmt.Sprintf("%s 에 대한 검색 결과:\n%s", searchKeywords, makePostReply(posts))
+				case "/search":
+					posts, err := retrivePost(msg, flagRetriveCnt)
+					if err != nil {
+						log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
+						return
+					}
+					reply = "검색 결과:\n" + makePostReply(posts)
+				case "/smallchat":
+					reply = strings.Join(cmd.Args, "\n")
+				default:
+					log.Printf("Unknown command: %s", cmd.Action)
+					reply = makeAboutReply()
+				}
+			}
+
+			// if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			// 	log.Printf("Failed to set read deadline: %v", err)
+			// 	continue
+			// }
+			if err := conn.WriteMessage(msgType, []byte(reply)); err != nil {
+				log.Printf("Write error: %v", err)
+			}
 		}
 	}
+
+	log.Println("Exiting...")
 }
 
 func makePostReply(posts []*Post) string {
