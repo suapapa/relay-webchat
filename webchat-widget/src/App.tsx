@@ -60,6 +60,12 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onInput={(e) => setInput(e.currentTarget.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
                 className="chatbot-input"
                 placeholder="Type your message..."
               />
