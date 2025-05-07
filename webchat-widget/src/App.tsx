@@ -11,6 +11,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -20,8 +21,9 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
   }, [messages, open])
 
   const sendMessage = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || isLoading) return
 
+    setIsLoading(true)
     const userMessage: Message = { sender: 'user', text: input }
     setMessages((prev) => [...prev, userMessage])
 
@@ -32,9 +34,10 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
     } catch (err) {
       const errorMsg: Message = { sender: 'bot', text: 'Error contacting backend.' }
       setMessages((prev) => [...prev, errorMsg])
+    } finally {
+      setIsLoading(false)
+      setInput('')
     }
-
-    setInput('')
   }
 
   return (
@@ -61,15 +64,18 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                 onChange={(e) => setInput(e.target.value)}
                 onInput={(e) => setInput(e.currentTarget.value)}
                 onKeyPress={(e) => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && !isLoading) {
                     e.preventDefault();
                     sendMessage();
                   }
                 }}
                 className="chatbot-input"
                 placeholder="Type your message..."
+                disabled={isLoading}
               />
-              <button onClick={sendMessage} className="chatbot-send-btn">Send</button>
+              <button onClick={sendMessage} className="chatbot-send-btn" disabled={isLoading}>
+                {isLoading ? 'Sending...' : 'Send'}
+              </button>
             </div>
           </div>
         )}
