@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"time"
 
 	ragkit "github.com/suapapa/go_ragkit"
 	ragkit_helper "github.com/suapapa/go_ragkit/helper"
@@ -25,7 +26,7 @@ func init() {
 
 func retrivePost(prompt string, cnt int) ([]*Post, error) {
 	log.Println("retrieving post with prompt:", prompt)
-	docs, err := vstorePhrases.RetrieveText(context.Background(), prompt, cnt, "title", "post_url", "tags")
+	docs, err := vstorePhrases.RetrieveText(context.Background(), prompt, cnt, "title", "post_url", "tags", "date")
 	if err != nil {
 		return nil, fmt.Errorf("failed to search phrases: %w", err)
 	}
@@ -35,6 +36,11 @@ func retrivePost(prompt string, cnt int) ([]*Post, error) {
 	for _, doc := range docs {
 		postUrl := doc.Metadata["post_url"].(string)
 		title := doc.Metadata["title"].(string)
+		dateStr := doc.Metadata["date"].(string)
+		date, err := time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			log.Printf("failed to parse date: %v", err)
+		}
 		var tags []string
 		if tagInterfaces, ok := doc.Metadata["tags"].([]interface{}); ok {
 			for _, tagInterface := range tagInterfaces {
@@ -51,6 +57,7 @@ func retrivePost(prompt string, cnt int) ([]*Post, error) {
 				Url:   postUrl,
 				Tags:  tags,
 				Texts: []string{text},
+				Date:  date,
 			}
 		} else {
 			postMap[postUrl].Texts = append(postMap[postUrl].Texts, text)
@@ -70,10 +77,11 @@ func retrivePost(prompt string, cnt int) ([]*Post, error) {
 }
 
 type Post struct {
-	Title string   `yaml:"title"`
-	Url   string   `yaml:"url"`
-	Tags  []string `yaml:"tags"`
-	Texts []string `yaml:"texts"`
+	Title string    `yaml:"title"`
+	Url   string    `yaml:"url"`
+	Tags  []string  `yaml:"tags"`
+	Texts []string  `yaml:"texts"`
+	Date  time.Time `yaml:"date"`
 }
 
 type Posts []*Post
@@ -83,6 +91,9 @@ func (p Posts) Len() int {
 }
 
 func (p Posts) Less(i, j int) bool {
+	if len(p[i].Texts) == len(p[j].Texts) {
+		return p[i].Date.After(p[j].Date)
+	}
 	return len(p[i].Texts) > len(p[j].Texts)
 }
 
