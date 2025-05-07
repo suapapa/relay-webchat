@@ -39,57 +39,62 @@ func main() {
 	}
 	defer conn.Close()
 
+	errRetryCnt := 0
 	for {
-		messageType, message, err := conn.ReadMessage()
+		msgType, msgBytes, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("Read error: %v", err)
 			time.Sleep(1 * time.Second)
+			errRetryCnt++
+			if errRetryCnt > 3 {
+				log.Fatalf("Failed to read message: %v", err)
+			}
 			continue
 		}
+		errRetryCnt = 0
 
-		go func(msg string) {
-			var reply string
-			if len([]rune(msg)) > 200 {
-				log.Printf("Message is too long: %d", len([]rune(msg)))
-				reply = "메시지가 너무 길어요. 200자 이하로 짧게 줄여주세요."
-			} else {
-				log.Printf("Received message: %s", msg)
+		msg := string(msgBytes)
+		var reply string
+		if len([]rune(msg)) > 200 {
+			log.Printf("Message is too long: %d", len([]rune(msg)))
+			reply = "메시지가 너무 길어요. 200자 이하로 짧게 줄여주세요."
+		} else {
+			log.Printf("Received message: %s", msg)
 
-				cmd, err := hominDevAI.PreProcessFLow.Run(context.Background(), msg)
+			cmd, err := hominDevAI.PreProcessFLow.Run(context.Background(), msg)
+			if err != nil {
+				log.Printf("Failed to run intent flow: %v", err)
+				return
+			}
+			log.Printf("Command: %s", cmd)
+
+			switch cmd.Action {
+			case "/keyword":
+				searchKeywords := strings.Join(cmd.Args, ",")
+				posts, err := retrivePost(searchKeywords, flagRetriveCnt)
 				if err != nil {
-					log.Printf("Failed to run intent flow: %v", err)
+					log.Printf("Failed to retrive post for keywords, %s: %v", searchKeywords, err)
 					return
 				}
-				log.Printf("Command: %s", cmd)
-
-				switch cmd.Action {
-				case "/keyword":
-					searchKeywords := strings.Join(cmd.Args, ",")
-					posts, err := retrivePost(searchKeywords, flagRetriveCnt)
-					if err != nil {
-						log.Printf("Failed to retrive post for keywords, %s: %v", searchKeywords, err)
-						return
-					}
-					reply = fmt.Sprintf("%s 에 대한 검색 결과:\n%s", searchKeywords, makePostReply(posts))
-				case "/search":
-					posts, err := retrivePost(msg, flagRetriveCnt)
-					if err != nil {
-						log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
-						return
-					}
-					reply = "검색 결과:\n" + makePostReply(posts)
-				case "/smallchat":
-					reply = strings.Join(cmd.Args, "\n")
-				default:
-					log.Printf("Unknown command: %s", cmd.Action)
-					reply = makeAboutReply()
+				reply = fmt.Sprintf("%s 에 대한 검색 결과:\n%s", searchKeywords, makePostReply(posts))
+			case "/search":
+				posts, err := retrivePost(msg, flagRetriveCnt)
+				if err != nil {
+					log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
+					return
 				}
+				reply = "검색 결과:\n" + makePostReply(posts)
+			case "/smallchat":
+				reply = strings.Join(cmd.Args, "\n")
+			default:
+				log.Printf("Unknown command: %s", cmd.Action)
+				reply = makeAboutReply()
 			}
+		}
 
-			if err := conn.WriteMessage(messageType, []byte(reply)); err != nil {
-				log.Printf("Write error: %v", err)
-			}
-		}(string(message))
+		if err := conn.WriteMessage(msgType, []byte(reply)); err != nil {
+			log.Printf("Write error: %v", err)
+		}
 	}
 }
 
