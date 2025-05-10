@@ -15,6 +15,9 @@ var flagAddr string
 var flagRootPath string
 
 func main() {
+	// Set gin to release mode
+	gin.SetMode(gin.ReleaseMode)
+
 	var secret string
 	secretB, err := os.ReadFile("/secret/token")
 	if err != nil {
@@ -29,6 +32,12 @@ func main() {
 	flag.Parse()
 
 	r := gin.Default()
+
+	// Configure trusted proxies
+	// In most Kubernetes setups, requests may come from various internal IPs (e.g., cluster ingress, service mesh).
+	// To avoid proxy issues, it's common to trust all proxies, but be aware of security implications.
+	// For stricter security, configure with known proxy IPs or CIDRs.
+	r.SetTrustedProxies(nil) // Trust all proxies (suitable for most Kubernetes clusters)
 
 	// Configure CORS
 	config := cors.DefaultConfig()

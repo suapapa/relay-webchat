@@ -9,4 +9,4 @@ webchat-widget/build/
 webchat-widget/dist/
 
 relay/relay
-processor/processor
+processor/processor*
