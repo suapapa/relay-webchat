@@ -59,7 +59,7 @@ func main() {
 	chCtrlC := make(chan os.Signal, 1)
 	signal.Notify(chCtrlC, os.Interrupt)
 
-	errRetryCnt := 0
+	readErrRetryCnt, writeErrRetryCnt := 0, 0
 	for {
 		select {
 		case <-chCtrlC:
@@ -88,12 +88,12 @@ func main() {
 
 				log.Printf("Connection error: %v", err)
 				time.Sleep(1 * time.Second)
-				errRetryCnt++
-				if errRetryCnt > 3 {
+				readErrRetryCnt++
+				if readErrRetryCnt > 3 {
 					log.Fatalf("Failed to reconnect after 3 attempts: %v", err)
 				}
 			}
-			errRetryCnt = 0
+			readErrRetryCnt = 0
 
 			msg := string(msgBytes)
 			var reply string
@@ -138,8 +138,16 @@ func main() {
 			// 	log.Printf("Failed to set read deadline: %v", err)
 			// 	continue
 			// }
+
 			if err := conn.WriteMessage(msgType, []byte(reply)); err != nil {
 				log.Printf("Write error: %v", err)
+				time.Sleep(1 * time.Second)
+				writeErrRetryCnt++
+				if writeErrRetryCnt > 3 {
+					log.Fatalf("Failed to write after 3 attempts: %v", err)
+				}
+			} else {
+				writeErrRetryCnt = 0
 			}
 		}
 	}
