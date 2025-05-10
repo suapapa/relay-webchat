@@ -1,0 +1,18 @@
+[Unit]
+Description=Relay WebChat Processor Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/relay-webchat
+# ExecStart=/opt/relay-webchat/processor_arm64 -ws wss://homin.dev/webchat-relay/ws -pre-process -retrive 10 -embedder openai
+Environment=WEAVIATE_ADDR=http://192.168.219.153:9035
+# Environment=OLLAMA_ADDR=http://localhost:11434
+Environment=GEMINI_API_KEY={YOUR_GEMINI_API_KEY}
+Environment=OPENAI_SECRET_KEY={YOUR_OPENAI_API_KEY}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 
