@@ -75,43 +75,57 @@ func main() {
 	chCtrlC := make(chan os.Signal, 1)
 	signal.Notify(chCtrlC, os.Interrupt)
 
+	msgChan := make(chan struct {
+		msgType int
+		msg     []byte
+		err     error
+	})
+
+	// Start message reading goroutine
 	readErrRetryCnt, writeErrRetryCnt := 0, 0
+	go func() {
+		for {
+			msgType, msgBytes, err := conn.ReadMessage()
+			msgChan <- struct {
+				msgType int
+				msg     []byte
+				err     error
+			}{msgType, msgBytes, err}
+			if err != nil {
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+					log.Printf("Reconnecting...")
+					if err := connectWS(); err != nil {
+						log.Fatalf("Failed to reconnect: %v", err)
+					}
+				} else {
+					log.Printf("Read error: %v", err)
+					readErrRetryCnt++
+					if readErrRetryCnt > 3 {
+						log.Fatalf("Failed to reconnect after 3 attempts: %v", err)
+					}
+				}
+			} else {
+				readErrRetryCnt = 0
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-chCtrlC:
 			log.Println("Ctrl-C pressed, exiting...")
-			return
+			cancel()
 		case <-ctx.Done():
 			log.Println("Context canceled, exiting...")
 			return
-		default:
-			// Set a read deadline of 5 seconds
-			// if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-			// 	log.Printf("Failed to set read deadline: %v", err)
-			// 	continue
-			// }
-			msgType, msgBytes, err := conn.ReadMessage()
-			if err != nil {
-				// 타임아웃 에러 처리
-				if os.IsTimeout(err) || websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-					// Try to reconnect
-					if err := connectWS(); err != nil {
-						log.Fatalf("Failed to reconnect: %v", err)
-					}
-					// log.Println("Successfully reconnected")
-					continue
-				}
-
-				log.Printf("Connection error: %v", err)
+		case msgData := <-msgChan:
+			if msgData.err != nil {
+				log.Printf("Connection error: %v", msgData.err)
 				time.Sleep(1 * time.Second)
-				readErrRetryCnt++
-				if readErrRetryCnt > 3 {
-					log.Fatalf("Failed to reconnect after 3 attempts: %v", err)
-				}
+				continue
 			}
-			readErrRetryCnt = 0
 
-			msg := string(msgBytes)
+			msg := string(msgData.msg)
 			var reply string
 			if len([]rune(msg)) > 200 {
 				log.Printf("Message is too long: %d", len([]rune(msg)))
@@ -150,12 +164,7 @@ func main() {
 				}
 			}
 
-			// if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-			// 	log.Printf("Failed to set read deadline: %v", err)
-			// 	continue
-			// }
-
-			if err := conn.WriteMessage(msgType, []byte(reply)); err != nil {
+			if err := conn.WriteMessage(msgData.msgType, []byte(reply)); err != nil {
 				log.Printf("Write error: %v", err)
 				time.Sleep(1 * time.Second)
 				writeErrRetryCnt++
