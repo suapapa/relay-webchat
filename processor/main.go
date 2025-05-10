@@ -148,7 +148,7 @@ func main() {
 				log.Printf("Received message: %s", msg)
 
 				var cmd Cmd
-				if strings.HasPrefix(msg, "/") {
+				if !strings.HasPrefix(msg, "/") {
 					cmd, err = hominDevAI.PreProcessFLow.Run(context.Background(), msg)
 					if err != nil {
 						log.Printf("Failed to run intent flow: %v", err)
@@ -181,15 +181,11 @@ func main() {
 						log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
 						return
 					}
-					// 너무 오랜된 글은 제외
-					if len(posts) > 5 {
-						posts = posts[:5]
-					}
 
+					stat.TotalSearchCnt++
 					if len(posts) == 0 {
 						reply = "검색 결과가 없습니다."
 					} else {
-						stat.TotalSearchCnt++
 						reply = "검색 결과:\n" + makePostReply(posts)
 					}
 				case "/smallchat":
@@ -223,7 +219,10 @@ func main() {
 func makePostReply(posts []*Post) string {
 	// reply := "검색 결과:\n"
 	var reply string
-	for _, post := range posts {
+	for i, post := range posts {
+		if i >= 5 {
+			break
+		}
 		reply += fmt.Sprintf("- [%s](%s) - %s\n", post.Title, post.Url, strings.Join(post.Texts, ","))
 	}
 	return reply
