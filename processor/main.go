@@ -181,8 +181,17 @@ func main() {
 						log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
 						return
 					}
-					stat.TotalSearchCnt++
-					reply = "검색 결과:\n" + makePostReply(posts)
+					// 너무 오랜된 글은 제외
+					if len(posts) > 5 {
+						posts = posts[:5]
+					}
+
+					if len(posts) == 0 {
+						reply = "검색 결과가 없습니다."
+					} else {
+						stat.TotalSearchCnt++
+						reply = "검색 결과:\n" + makePostReply(posts)
+					}
 				case "/smallchat":
 					stat.TotalSmallChatCnt++
 					reply = strings.Join(cmd.Args, "\n")
