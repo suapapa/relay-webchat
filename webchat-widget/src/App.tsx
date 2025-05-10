@@ -8,7 +8,10 @@ interface Message {
 }
 
 function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const savedMessages = localStorage.getItem('chatMessages');
+    return savedMessages ? JSON.parse(savedMessages) : [];
+  });
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -19,6 +22,15 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages, open])
+
+  useEffect(() => {
+    localStorage.setItem('chatMessages', JSON.stringify(messages));
+  }, [messages]);
+
+  const clearMessages = () => {
+    setMessages([]);
+    localStorage.removeItem('chatMessages');
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
@@ -75,6 +87,9 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
               />
               <button onClick={sendMessage} className="chatbot-send-btn" disabled={isLoading}>
                 {isLoading ? 'Sending...' : 'Send'}
+              </button>
+              <button onClick={clearMessages} className="chatbot-clear-btn" title="Clear chat history">
+                🗑️
               </button>
             </div>
           </div>

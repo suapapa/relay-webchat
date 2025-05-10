@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -24,6 +25,8 @@ var (
 )
 
 func main() {
+	defer func() { log.Println("Exiting...") }()
+
 	flag.StringVar(&flagWebSocketServer, "ws", "ws://localhost:8080", "WebSocket server address")
 	flag.IntVar(&flagRetriveCnt, "retrive", 50, "Retrive count")
 	flag.BoolVar(&flagPromptPreProcess, "pre-process", false, "Pre-process prompt")
@@ -40,6 +43,7 @@ func main() {
 		secret = strings.TrimSpace(string(secretB))
 	}
 
+	stat := &Stat{}
 	log.Printf("WebSocket server: %s", flagWebSocketServer)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -71,9 +75,9 @@ func main() {
 	}
 	defer conn.Close()
 
-	// get ctrl-c
+	// get termination signals (systemctl restart sends SIGTERM, not os.Interrupt)
 	chCtrlC := make(chan os.Signal, 1)
-	signal.Notify(chCtrlC, os.Interrupt)
+	signal.Notify(chCtrlC, os.Interrupt, syscall.SIGTERM)
 
 	msgChan := make(chan struct {
 		msgType int
@@ -114,6 +118,11 @@ func main() {
 		select {
 		case <-chCtrlC:
 			log.Println("Ctrl-C pressed, exiting...")
+			// Close WebSocket connection gracefully
+			if conn != nil {
+				conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				conn.Close()
+			}
 			cancel()
 		case <-ctx.Done():
 			log.Println("Context canceled, exiting...")
@@ -126,17 +135,33 @@ func main() {
 			}
 
 			msg := string(msgData.msg)
+			msg = strings.TrimSpace(msg)
+
 			var reply string
 			if len([]rune(msg)) > 200 {
 				log.Printf("Message is too long: %d", len([]rune(msg)))
 				reply = "메시지가 너무 길어요. 200자 이하로 짧게 줄여주세요."
+			} else if len(msg) == 0 {
+				log.Printf("Empty message")
+				continue
 			} else {
 				log.Printf("Received message: %s", msg)
 
-				cmd, err := hominDevAI.PreProcessFLow.Run(context.Background(), msg)
-				if err != nil {
-					log.Printf("Failed to run intent flow: %v", err)
-					return
+				var cmd Cmd
+				if strings.HasPrefix(msg, "/") {
+					cmd, err = hominDevAI.PreProcessFLow.Run(context.Background(), msg)
+					if err != nil {
+						log.Printf("Failed to run intent flow: %v", err)
+						return
+					}
+				} else {
+					msgParts := strings.Split(msg, " ")
+					if len(msgParts) > 0 {
+						cmd = Cmd{
+							Action: msgParts[0],
+							Args:   msgParts[1:],
+						}
+					}
 				}
 				log.Printf("Command: %s", cmd)
 
@@ -148,6 +173,7 @@ func main() {
 						log.Printf("Failed to retrive post for keywords, %s: %v", searchKeywords, err)
 						return
 					}
+					stat.TotalKeywordCnt++
 					reply = fmt.Sprintf("%s 에 대한 검색 결과:\n%s", searchKeywords, makePostReply(posts))
 				case "/search":
 					posts, err := retrivePost(msg, flagRetriveCnt)
@@ -155,11 +181,18 @@ func main() {
 						log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
 						return
 					}
+					stat.TotalSearchCnt++
 					reply = "검색 결과:\n" + makePostReply(posts)
 				case "/smallchat":
+					stat.TotalSmallChatCnt++
 					reply = strings.Join(cmd.Args, "\n")
+				case "/about", "/start", "/help":
+					reply = makeAboutReply()
+				case "/stat":
+					reply = stat.String()
 				default:
 					log.Printf("Unknown command: %s", cmd.Action)
+					stat.TotalUnknownCnt++
 					reply = makeAboutReply()
 				}
 			}
@@ -175,9 +208,7 @@ func main() {
 				writeErrRetryCnt = 0
 			}
 		}
-	}
-
-	log.Println("Exiting...")
+	} // for
 }
 
 func makePostReply(posts []*Post) string {
@@ -199,4 +230,19 @@ Homin Lee's blog를 검색합니다. 편하게 물어보세요.
 제가 만들어진 내용은 [여기](%s)에 있습니다.`,
 		siteURL,
 	)
+}
+
+type Stat struct {
+	TotalSmallChatCnt int
+	TotalKeywordCnt   int
+	TotalSearchCnt    int
+	TotalUnknownCnt   int
+}
+
+func (s *Stat) String() string {
+	return fmt.Sprintf(`- TotalSmallChat: %d
+- TotalKeyword: %d
+- TotalSearch: %d
+- TotalUnknown: %d`,
+		s.TotalSmallChatCnt, s.TotalKeywordCnt, s.TotalSearchCnt, s.TotalUnknownCnt)
 }
