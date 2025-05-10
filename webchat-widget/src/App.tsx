@@ -105,7 +105,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                 {isLoading ? 'Sending...' : 'Send'}
               </button>
               <button onClick={clearMessages} className="chatbot-clear-btn" title="Clear chat history">
-                🗑️
+                🚮 
               </button>
             </div>
           </div>

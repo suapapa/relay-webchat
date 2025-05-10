@@ -233,6 +233,20 @@ function ensureWidgetContainerWithShadow() {
   cursor: pointer;
 }
 
+.chatbot-clear-btn {
+  padding: 0.5rem 1rem;
+  background: #ff4444;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.chatbot-clear-btn:hover {
+  background-color: #ff0000;
+}
+
 .chatbot-toggle-btn {
   position: absolute;
   right: 0;
