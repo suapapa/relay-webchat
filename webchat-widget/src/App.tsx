@@ -74,7 +74,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
         {open && (
           <div className="chatbot-widget">
             <h2 className="chatbot-title">🍀 블검봇</h2>
-            <p className="chatbot-desc">GenAI chatbot to help you 🔍 Homin Lee's blog</p>
+            <p className="chatbot-desc">GenAI chatbot to help you search Homin Lee's blog</p>
 
             <div className="chatbot-messages">
               {messages.map((msg, idx) => (
@@ -112,7 +112,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
         )}
         <button
           className="chatbot-toggle-btn"
-          style={{ bottom: open ? '470px' : '24px' }}
+          style={{ bottom: open ? '70vh' : '24px' }}
           onClick={() => setOpen((o) => !o)}
         >
           {open ? '×' : '🍀'}

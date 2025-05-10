@@ -21,8 +21,10 @@ const widgetCSS = `
     #webchat-widget-container,
     #webchat-widget-container * {
         font-family: 'GowunDodum', sans-serif !important;
-        margin-top: 0;
-        margin-bottom: 0;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
     }
     #webchat-widget-container {
         position: fixed;
@@ -37,7 +39,7 @@ const widgetCSS = `
         border-radius: 8px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         width: 350px;
-        height: 500px;
+        height: 70vh;
         max-width: 95vw;
         max-height: 80vh;
         display: flex;
