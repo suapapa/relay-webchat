@@ -1,17 +1,15 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
-	ollama_plugin "github.com/firebase/genkit/go/plugins/ollama"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 )
 
 type HominDevAI struct {
@@ -22,34 +20,45 @@ type HominDevAI struct {
 }
 
 func NewHominDevAI(ctx context.Context) (*HominDevAI, error) {
-	o := &ollama_plugin.Ollama{
-		ServerAddress: cmp.Or(os.Getenv("OLLAMA_ADDR"), "http://localhost:11434"),
-	}
-	g, err := genkit.Init(
-		ctx,
-		genkit.WithPlugins(o),
-		genkit.WithDefaultModel("ollama/gemma3"),
+	// o := &ollama_plugin.Ollama{
+	// 	ServerAddress: cmp.Or(os.Getenv("OLLAMA_ADDR"), "http://localhost:11434"),
+	// }
+	// g, err := genkit.Init(
+	// 	ctx,
+	// 	genkit.WithPlugins(o),
+	// 	genkit.WithDefaultModel("ollama/qwen3"),
+	// )
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to initialize genkit: %w", err)
+	// }
+
+	// o.DefineModel(
+	// 	g,
+	// 	ollama_plugin.ModelDefinition{
+	// 		Name: "qwen3",
+	// 		Type: "chat",
+	// 	},
+	// 	&ai.ModelInfo{
+	// 		Label: "QWEN 3",
+	// 		Supports: &ai.ModelSupports{
+	// 			Multiturn:  true,
+	// 			SystemRole: true,
+	// 			Media:      true,
+	// 			Tools:      false,
+	// 		},
+	// 	},
+	// )
+
+	g, err := genkit.Init(ctx,
+		genkit.WithPlugins(
+			&googlegenai.GoogleAI{},
+		),
+		genkit.WithDefaultModel("googleai/gemini-2.0-flash"),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize genkit: %w", err)
+		return nil, fmt.Errorf("failed to initialize Genkit: %w", err)
 	}
 
-	o.DefineModel(
-		g,
-		ollama_plugin.ModelDefinition{
-			Name: "gemma3",
-			Type: "chat",
-		},
-		&ai.ModelInfo{
-			Label: "Gemma 3",
-			Supports: &ai.ModelSupports{
-				Multiturn:  true,
-				SystemRole: true,
-				Media:      true,
-				Tools:      false,
-			},
-		},
-	)
 	ret := &HominDevAI{}
 
 	ret.PreProcessFLow = genkit.DefineFlow(

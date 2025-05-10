@@ -13,18 +13,38 @@ import (
 
 var vstorePhrases ragkit.VectorStore
 
-func init() {
-	var err error
-	vstorePhrases, err = ragkit_helper.NewWeaviateOllamaVectorStore(
-		"homin_dev_phrases_ollama", // vector DB class name
-		ragkit_helper.DefaultOllamaEmbedModel,
-	)
-	if err != nil {
-		log.Fatalf("failed to create vector store: %v", err)
+func initVStorePhrases() error {
+	if vstorePhrases != nil {
+		return nil
 	}
+
+	var err error
+	switch flagEmbedderType {
+	case "ollama":
+		vstorePhrases, err = ragkit_helper.NewWeaviateOllamaVectorStore(
+			"homin_dev_phrases_ollama", // vector DB class name
+			ragkit_helper.DefaultOllamaEmbedModel,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create vector store: %w", err)
+		}
+	case "openai":
+		vstorePhrases, err = ragkit_helper.NewWeaviateOpenAIVectorStore(
+			"homin_dev_phrases_openai", // vector DB class name
+			ragkit_helper.DefaultOAIEmbedModel,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create vector store: %w", err)
+		}
+	default:
+		return fmt.Errorf("invalid embedder type: %s", flagEmbedderType)
+	}
+	return nil
 }
 
 func retrivePost(prompt string, cnt int) ([]*Post, error) {
+	initVStorePhrases()
+
 	log.Println("retrieving post with prompt:", prompt)
 	docs, err := vstorePhrases.RetrieveText(context.Background(), prompt, cnt, "title", "post_url", "tags", "date")
 	if err != nil {

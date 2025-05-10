@@ -17,6 +17,7 @@ var (
 	flagWebSocketServer  string
 	flagRetriveCnt       int
 	flagPromptPreProcess bool
+	flagEmbedderType     string
 
 	hominDevAI *HominDevAI
 )
@@ -25,6 +26,7 @@ func main() {
 	flag.StringVar(&flagWebSocketServer, "ws", "ws://localhost:8080", "WebSocket server address")
 	flag.IntVar(&flagRetriveCnt, "retrive", 50, "Retrive count")
 	flag.BoolVar(&flagPromptPreProcess, "pre-process", false, "Pre-process prompt")
+	flag.StringVar(&flagEmbedderType, "embedder", "ollama", "Embedder type (ollama, openai)")
 	flag.Parse()
 
 	log.Printf("WebSocket server: %s", flagWebSocketServer)
