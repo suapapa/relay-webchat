@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -18,8 +19,8 @@ var (
 	flagRetriveCnt       int
 	flagPromptPreProcess bool
 	flagEmbedderType     string
-
-	hominDevAI *HominDevAI
+	flagSecretFile       string
+	hominDevAI           *HominDevAI
 )
 
 func main() {
@@ -27,14 +28,23 @@ func main() {
 	flag.IntVar(&flagRetriveCnt, "retrive", 50, "Retrive count")
 	flag.BoolVar(&flagPromptPreProcess, "pre-process", false, "Pre-process prompt")
 	flag.StringVar(&flagEmbedderType, "embedder", "ollama", "Embedder type (ollama, openai)")
+	flag.StringVar(&flagSecretFile, "secret", "/secret/token", "Secret file")
 	flag.Parse()
+
+	var secret string
+	secretB, err := os.ReadFile(flagSecretFile)
+	if err != nil {
+		fmt.Printf("WARN: failed to read secret: %v\n", err)
+	} else {
+		log.Println("using secret from file")
+		secret = strings.TrimSpace(string(secretB))
+	}
 
 	log.Printf("WebSocket server: %s", flagWebSocketServer)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var err error
 	hominDevAI, err = NewHominDevAI(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create HominDevAI: %v", err)
@@ -43,7 +53,13 @@ func main() {
 	var conn *websocket.Conn
 	connectWS := func() error {
 		var err error
-		conn, _, err = websocket.DefaultDialer.Dial(flagWebSocketServer, nil)
+
+		reqHeader := http.Header{}
+		if secret != "" {
+			reqHeader.Set("Authorization", fmt.Sprintf("Bearer %s", secret))
+		}
+
+		conn, _, err = websocket.DefaultDialer.Dial(flagWebSocketServer, reqHeader)
 		if err != nil {
 			return fmt.Errorf("failed to connect to WebSocket server: %v", err)
 		}
