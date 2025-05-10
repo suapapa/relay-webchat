@@ -18,6 +18,22 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
+    const sendStartMessage = async () => {
+      if (messages.length === 0) {
+        try {
+          const response = await axios.post(`${apiUrl}`, { message: '/start' });
+          const botMessage: Message = { sender: 'bot', text: response.data.reply || 'No response' };
+          setMessages([botMessage]);
+        } catch (err) {
+          const errorMsg: Message = { sender: 'bot', text: 'Error contacting backend.' }
+          setMessages([errorMsg]);
+        }
+      }
+    };
+    sendStartMessage();
+  }, []); // Empty dependency array means this runs once on mount
+
+  useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }

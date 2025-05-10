@@ -73,6 +73,22 @@ style.textContent = `
         transition: bottom 0.3s ease;
     }
 
+    .chatbot-clear-btn {
+      background-color: #ff4444;
+      color: white;
+      border: none;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-left: 8px;
+      transition: background-color 0.2s;
+    }
+
+    .chatbot-clear-btn:hover {
+      background-color: #ff0000;
+    } 
+
     @media (max-width: 600px) {
         #webchat-widget-container {
             bottom: 0;
