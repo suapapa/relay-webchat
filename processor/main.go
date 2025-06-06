@@ -114,6 +114,27 @@ func main() {
 		}
 	}()
 
+	// 연결 직후
+	conn.SetPongHandler(func(appData string) error {
+		log.Println("Received pong")
+		return nil
+	})
+
+	// 주기적으로 ping 보내기 (예: 30초마다)
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					log.Printf("Ping error: %v", err)
+					return
+				}
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-chCtrlC:
@@ -229,7 +250,7 @@ func makePostReply(posts []*Post) string {
 }
 
 func makeAboutReply() string {
-	siteURL := `https://homin.dev/blog/post/20250507_rag_blog_search_webchat_got/`
+	siteURL := `https://homin.dev/blog/post/20250507_rag_blog_search_webchat_bot/`
 
 	return fmt.Sprintf(
 		`내 이름은 **블검봇**.
