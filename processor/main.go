@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -55,25 +56,58 @@ func main() {
 	}
 
 	var conn *websocket.Conn
+	var connMutex sync.Mutex
+
 	connectWS := func() error {
-		var err error
+		connMutex.Lock()
+		defer connMutex.Unlock()
+
+		// Close existing connection if any
+		if conn != nil {
+			conn.Close()
+			conn = nil
+		}
 
 		reqHeader := http.Header{}
 		if secret != "" {
 			reqHeader.Set("Authorization", fmt.Sprintf("Bearer %s", secret))
 		}
 
+		var err error
 		conn, _, err = websocket.DefaultDialer.Dial(flagWebSocketServer, reqHeader)
 		if err != nil {
 			return fmt.Errorf("failed to connect to WebSocket server: %v", err)
 		}
+
+		// Set connection parameters for better reliability
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+
+		// Set up ping/pong handler for the new connection
+		conn.SetPongHandler(func(appData string) error {
+			log.Println("Received pong")
+			// Reset read deadline on pong
+			connMutex.Lock()
+			if conn != nil {
+				conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			}
+			connMutex.Unlock()
+			return nil
+		})
+
 		return nil
 	}
 
 	if err := connectWS(); err != nil {
 		log.Fatalf("%v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		connMutex.Lock()
+		if conn != nil {
+			conn.Close()
+		}
+		connMutex.Unlock()
+	}()
 
 	// get termination signals (systemctl restart sends SIGTERM, not os.Interrupt)
 	chCtrlC := make(chan os.Signal, 1)
@@ -87,50 +121,94 @@ func main() {
 
 	// Start message reading goroutine
 	readErrRetryCnt, writeErrRetryCnt := 0, 0
+	stopReading := make(chan struct{})
+
 	go func() {
+		defer close(msgChan)
 		for {
-			msgType, msgBytes, err := conn.ReadMessage()
-			msgChan <- struct {
+			select {
+			case <-stopReading:
+				return
+			default:
+			}
+
+			connMutex.Lock()
+			currentConn := conn
+			connMutex.Unlock()
+
+			if currentConn == nil {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			// Set read deadline for this read operation
+			currentConn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			msgType, msgBytes, err := currentConn.ReadMessage()
+
+			select {
+			case msgChan <- struct {
 				msgType int
 				msg     []byte
 				err     error
-			}{msgType, msgBytes, err}
+			}{msgType, msgBytes, err}:
+			case <-stopReading:
+				return
+			}
+
 			if err != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-					log.Printf("Reconnecting...")
-					if err := connectWS(); err != nil {
-						log.Fatalf("Failed to reconnect: %v", err)
-					}
+				log.Printf("Read error: %v", err)
+
+				// Check if it's a close error or network error
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					log.Printf("Connection closed normally, reconnecting...")
 				} else {
-					log.Printf("Read error: %v", err)
-					readErrRetryCnt++
-					if readErrRetryCnt > 3 {
-						log.Fatalf("Failed to reconnect after 3 attempts: %v", err)
-					}
+					log.Printf("Connection error, attempting reconnection...")
 				}
+
+				// Attempt reconnection
+				readErrRetryCnt++
+				if readErrRetryCnt > 5 {
+					log.Fatalf("Failed to reconnect after 5 attempts: %v", err)
+				}
+
+				// Wait before reconnecting
+				time.Sleep(time.Duration(readErrRetryCnt) * time.Second)
+
+				if err := connectWS(); err != nil {
+					log.Printf("Failed to reconnect: %v", err)
+					continue
+				}
+
+				log.Printf("Successfully reconnected")
+				readErrRetryCnt = 0
 			} else {
 				readErrRetryCnt = 0
 			}
 		}
 	}()
 
-	// 연결 직후
-	conn.SetPongHandler(func(appData string) error {
-		log.Println("Received pong")
-		return nil
-	})
+	// Pong handler is set up in connectWS function
 
-	// 주기적으로 ping 보내기 (예: 30초마다)
+	// Send periodic ping (every 30 seconds)
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					log.Printf("Ping error: %v", err)
-					return
+				connMutex.Lock()
+				currentConn := conn
+				connMutex.Unlock()
+
+				if currentConn != nil {
+					currentConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+					if err := currentConn.WriteMessage(websocket.PingMessage, nil); err != nil {
+						log.Printf("Ping error: %v", err)
+						// Don't return, keep trying
+					}
 				}
+			case <-stopReading:
+				return
 			}
 		}
 	}()
@@ -139,16 +217,26 @@ func main() {
 		select {
 		case <-chCtrlC:
 			log.Println("Ctrl-C pressed, exiting...")
+			// Signal stop to reading goroutine
+			close(stopReading)
 			// Close WebSocket connection gracefully
+			connMutex.Lock()
 			if conn != nil {
 				conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 				conn.Close()
 			}
+			connMutex.Unlock()
 			cancel()
+			return
 		case <-ctx.Done():
 			log.Println("Context canceled, exiting...")
+			close(stopReading)
 			return
-		case msgData := <-msgChan:
+		case msgData, ok := <-msgChan:
+			if !ok {
+				log.Println("Message channel closed, exiting...")
+				return
+			}
 			if msgData.err != nil {
 				log.Printf("Connection error: %v", msgData.err)
 				time.Sleep(1 * time.Second)
@@ -223,15 +311,34 @@ func main() {
 				}
 			}
 
-			if err := conn.WriteMessage(msgData.msgType, []byte(reply)); err != nil {
-				log.Printf("Write error: %v", err)
-				time.Sleep(1 * time.Second)
-				writeErrRetryCnt++
-				if writeErrRetryCnt > 3 {
-					log.Fatalf("Failed to write after 3 attempts: %v", err)
+			connMutex.Lock()
+			currentConn := conn
+			connMutex.Unlock()
+
+			if currentConn != nil {
+				currentConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := currentConn.WriteMessage(msgData.msgType, []byte(reply)); err != nil {
+					log.Printf("Write error: %v", err)
+					writeErrRetryCnt++
+					if writeErrRetryCnt > 3 {
+						log.Printf("Failed to write after 3 attempts, attempting reconnection: %v", err)
+						// Trigger reconnection
+						connMutex.Lock()
+						if conn != nil {
+							conn.Close()
+							conn = nil
+						}
+						connMutex.Unlock()
+						time.Sleep(1 * time.Second)
+						if err := connectWS(); err != nil {
+							log.Printf("Failed to reconnect after write error: %v", err)
+						}
+					}
+				} else {
+					writeErrRetryCnt = 0
 				}
 			} else {
-				writeErrRetryCnt = 0
+				log.Printf("No connection available for writing")
 			}
 		}
 	} // for
