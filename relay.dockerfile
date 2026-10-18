@@ -1,11 +1,11 @@
 # Build stage
 FROM golang:1.24-alpine AS builder
 
+ENV GOTOOLCHAIN=auto
 WORKDIR /app
-COPY go.mod go.sum ./
 COPY relay/ ./relay/
-RUN go mod tidy
 WORKDIR /app/relay
+RUN go mod tidy
 
 ENV CGO_ENABLED=0
 RUN go build -o app

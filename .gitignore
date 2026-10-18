@@ -1,12 +1,39 @@
-.gitignore
+# Local scratch
+_ref/
 
-_ref
-
-# Webchat Widget
+# Webchat Widget (React)
 webchat-widget/node_modules/
 webchat-widget/coverage/
 webchat-widget/build/
 webchat-widget/dist/
+webchat-widget/.cache/
+webchat-widget/*.local
 
+# Go binaries
 relay/relay
 processor/processor
+processor/processor_*
+*.exe
+*.exe~
+*.test
+*.out
+vendor/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+token
+**/secret/
+/secret/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

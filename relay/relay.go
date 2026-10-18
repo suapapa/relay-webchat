@@ -87,27 +87,67 @@ func (r *Relay) handleWebSocket(c *gin.Context) {
 	log.Printf("New WebSocket connection from %s", r.processorConn.RemoteAddr())
 	defer func() {
 		log.Printf("Closing WebSocket connection from %s", r.processorConn.RemoteAddr())
-		r.processorConn.Close()
+		if r.processorConn != nil {
+			r.processorConn.Close()
+		}
 		r.processorConn = nil
 	}()
 
-	log.Printf("New WebSocket connection from %s", r.processorConn.RemoteAddr())
+	// Set up ping/pong handlers
+	r.processorConn.SetPongHandler(func(appData string) error {
+		log.Println("Received pong from processor")
+		return nil
+	})
+
+	// Send periodic ping to keep connection alive
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	go func() {
+		for range pingTicker.C {
+			if r.processorConn != nil {
+				r.processorConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := r.processorConn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					log.Printf("Ping error: %v", err)
+					return
+				}
+			}
+		}
+	}()
 
 	for msg := range r.msgChan {
+		if r.processorConn == nil {
+			log.Println("No processor connection available")
+			msg.ReplyCh <- "Service temporarily unavailable"
+			msg.Close()
+			continue
+		}
+
+		// Set write deadline
+		r.processorConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if err := r.processorConn.WriteMessage(websocket.TextMessage, []byte(msg.Content)); err != nil {
 			log.Printf("Write error: %v", err)
+			msg.ReplyCh <- "Failed to send message to processor"
+			msg.Close()
 			break
 		}
 
+		// Set read deadline
+		r.processorConn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		replyType, reply, err := r.processorConn.ReadMessage()
 		if err != nil {
 			log.Printf("Read error: %v", err)
+			msg.ReplyCh <- "Failed to receive response from processor"
+			msg.Close()
 			break
 		}
 
 		if replyType == websocket.TextMessage {
 			msg.ReplyCh <- string(reply)
+		} else {
+			msg.ReplyCh <- "Invalid response format from processor"
 		}
+		msg.Close()
 	}
 }
 

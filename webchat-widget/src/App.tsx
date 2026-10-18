@@ -1,7 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 import { marked } from 'marked'
-import './App.css'
 
 interface Message {
   sender: 'user' | 'bot'
@@ -9,13 +8,50 @@ interface Message {
 }
 
 function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const savedMessages = localStorage.getItem('chatMessages');
+    return savedMessages ? JSON.parse(savedMessages) : [];
+  });
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const sendStartMessage = async () => {
+      if (messages.length === 0) {
+        try {
+          const response = await axios.post(`${apiUrl}`, { message: '/start' });
+          const botMessage: Message = { sender: 'bot', text: response.data.reply || 'No response' };
+          setMessages([botMessage]);
+        } catch (err) {
+          const errorMsg: Message = { sender: 'bot', text: 'Error contacting backend.' }
+          setMessages([errorMsg]);
+        }
+      }
+    };
+    sendStartMessage();
+  }, []); // Empty dependency array means this runs once on mount
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, open])
+
+  useEffect(() => {
+    localStorage.setItem('chatMessages', JSON.stringify(messages));
+  }, [messages]);
+
+  const clearMessages = () => {
+    setMessages([]);
+    localStorage.removeItem('chatMessages');
+  };
 
   const sendMessage = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || isLoading) return
 
+    setIsLoading(true)
     const userMessage: Message = { sender: 'user', text: input }
     setMessages((prev) => [...prev, userMessage])
 
@@ -26,9 +62,10 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
     } catch (err) {
       const errorMsg: Message = { sender: 'bot', text: 'Error contacting backend.' }
       setMessages((prev) => [...prev, errorMsg])
+    } finally {
+      setIsLoading(false)
+      setInput('')
     }
-
-    setInput('')
   }
 
   return (
@@ -36,8 +73,8 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
       <div className="chatbot-widget-container">
         {open && (
           <div className="chatbot-widget">
-            <h1 className="chatbot-title">Hello World!</h1>
-            <p className="chatbot-desc">This is a custom chatbot using a local backend.</p>
+            <h2 className="chatbot-title">🍀 블검봇</h2>
+            <p className="chatbot-desc">GenAI chatbot to help you search Homin Lee's blog</p>
 
             <div className="chatbot-messages">
               {messages.map((msg, idx) => (
@@ -45,6 +82,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                   <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong> <span dangerouslySetInnerHTML={{ __html: marked(msg.text) }} />
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="chatbot-input-row">
@@ -52,21 +90,29 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                onInput={(e) => setInput(e.currentTarget.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && !isLoading) {
+                    e.preventDefault();
                     sendMessage();
                   }
                 }}
                 className="chatbot-input"
                 placeholder="Type your message..."
+                disabled={isLoading}
               />
-              <button onClick={sendMessage} className="chatbot-send-btn">Send</button>
+              <button onClick={sendMessage} className="chatbot-send-btn" disabled={isLoading}>
+                {isLoading ? 'Sending...' : 'Send'}
+              </button>
+              <button onClick={clearMessages} className="chatbot-clear-btn" title="Clear chat history">
+                X 
+              </button>
             </div>
           </div>
         )}
         <button
           className="chatbot-toggle-btn"
-          style={{ bottom: open ? '510px' : '24px' }}
+          style={{ bottom: open ? '70vh' : '24px' }}
           onClick={() => setOpen((o) => !o)}
         >
           {open ? '×' : '🍀'}

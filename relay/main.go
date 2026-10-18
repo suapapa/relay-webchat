@@ -1,8 +1,11 @@
 package main
 
 import (
+	"cmp"
 	"flag"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -12,11 +15,25 @@ var flagAddr string
 var flagRootPath string
 
 func main() {
+	// Set gin to release mode
+	gin.SetMode(gin.ReleaseMode)
+
+	secret := strings.TrimSpace(os.Getenv("RELAY_APIKEY"))
+	if secret != "" {
+		log.Println("using RELAY_APIKEY from environment")
+	}
+
 	flag.StringVar(&flagAddr, "addr", ":8080", "address to listen on")
-	flag.StringVar(&flagRootPath, "root", "/", "root path of webchat-widget")
+	flag.StringVar(&flagRootPath, "root", cmp.Or(os.Getenv("ROOT_PATH"), "/"), "root path of webchat-widget")
 	flag.Parse()
 
 	r := gin.Default()
+
+	// Configure trusted proxies
+	// In most Kubernetes setups, requests may come from various internal IPs (e.g., cluster ingress, service mesh).
+	// To avoid proxy issues, it's common to trust all proxies, but be aware of security implications.
+	// For stricter security, configure with known proxy IPs or CIDRs.
+	r.SetTrustedProxies(nil) // Trust all proxies (suitable for most Kubernetes clusters)
 
 	// Configure CORS
 	config := cors.DefaultConfig()
@@ -32,11 +49,19 @@ func main() {
 		log.Println("root path: ", rootPath)
 	}
 
-	// Chat endpoint
+	// Chat endpoint for webchat-widget
 	r.POST(rootPath+"/chat", relay.ChatHandler)
 
-	// WebSocket 엔드포인트 설정
-	r.GET(rootPath+"/ws", relay.handleWebSocket)
+	// WebSocket endpoint for processor
+	r.GET(rootPath+"/ws", func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		expected := "Bearer " + secret
+		if secret != "" && authHeader != expected {
+			c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"})
+			return
+		}
+		relay.handleWebSocket(c)
+	})
 
 	// Start server
 	r.Run(flagAddr)
