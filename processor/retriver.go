@@ -31,7 +31,7 @@ func initVStorePhrases() error {
 	case "openai":
 		vstorePhrases, err = ragkit_helper.NewWeaviateOpenAIVectorStore(
 			"homin_dev_phrases_openai", // vector DB class name
-			ragkit_helper.DefaultOAIEmbedModel,
+			ragkit_helper.DefaultOAIEmbedModel(),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create vector store: %w", err)
