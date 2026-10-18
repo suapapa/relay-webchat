@@ -5,33 +5,101 @@ import { marked } from 'marked'
 interface Message {
   sender: 'user' | 'bot'
   text: string
+  isError?: boolean
 }
 
-function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const savedMessages = localStorage.getItem('chatMessages');
-    return savedMessages ? JSON.parse(savedMessages) : [];
-  });
+export interface AppProps {
+  apiUrl?: string
+}
+
+const STORAGE_KEY = 'chatMessages'
+export const DEFAULT_API_URL = 'https://homin.dev/webchat-relay/chat'
+
+function loadSavedMessages(): Message[] {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (!saved) return []
+    const parsed = JSON.parse(saved)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (m): m is Message =>
+        m &&
+        typeof m === 'object' &&
+        (m.sender === 'user' || m.sender === 'bot') &&
+        typeof m.text === 'string' &&
+        !m.isError
+    )
+  } catch {
+    return []
+  }
+}
+
+function renderBotMarkdown(text: string): string {
+  const rawHtml = marked.parse(text, { async: false }) as string
+  const template = document.createElement('template')
+  template.innerHTML = rawHtml
+
+  template.content.querySelectorAll('script, iframe, object, embed').forEach((el) => el.remove())
+  template.content.querySelectorAll('*').forEach((el) => {
+    Array.from(el.attributes).forEach((attr) => {
+      const name = attr.name.toLowerCase()
+      const value = attr.value.trim().toLowerCase()
+      if (name.startsWith('on') || ((name === 'href' || name === 'src') && value.startsWith('javascript:'))) {
+        el.removeAttribute(attr.name)
+      }
+    })
+  })
+
+  return template.innerHTML
+}
+
+function App({ apiUrl = DEFAULT_API_URL }: AppProps) {
+  const [messages, setMessages] = useState<Message[]>(loadSavedMessages)
   const [input, setInput] = useState('')
   const [open, setOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const startInFlightRef = useRef(false)
 
   useEffect(() => {
-    const sendStartMessage = async () => {
-      if (messages.length === 0) {
-        try {
-          const response = await axios.post(`${apiUrl}`, { message: '/start' });
-          const botMessage: Message = { sender: 'bot', text: response.data.reply || 'No response' };
-          setMessages([botMessage]);
-        } catch (err) {
-          const errorMsg: Message = { sender: 'bot', text: 'Error contacting backend.' }
-          setMessages([errorMsg]);
+    if (!open || messages.length > 0 || startInFlightRef.current) {
+      return
+    }
+
+    let cancelled = false
+    startInFlightRef.current = true
+    setIsLoading(true)
+
+    axios
+      .post(apiUrl, { message: '/start' })
+      .then((response) => {
+        if (cancelled) return
+        const botMessage: Message = {
+          sender: 'bot',
+          text: response.data?.reply || 'No response',
         }
-      }
-    };
-    sendStartMessage();
-  }, []); // Empty dependency array means this runs once on mount
+        setMessages((prev) => (prev.length === 0 ? [botMessage] : prev))
+      })
+      .catch((err) => {
+        if (cancelled) return
+        const errorMsg: Message = {
+          sender: 'bot',
+          text: err?.response?.data?.reply || 'Error contacting backend.',
+          isError: true,
+        }
+        setMessages((prev) => (prev.length === 0 ? [errorMsg] : prev))
+      })
+      .finally(() => {
+        startInFlightRef.current = false
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, messages.length, apiUrl])
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -40,31 +108,52 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
   }, [messages, open])
 
   useEffect(() => {
-    localStorage.setItem('chatMessages', JSON.stringify(messages));
-  }, [messages]);
+    try {
+      const persistable = messages.filter((m) => !m.isError)
+      if (persistable.length === 0) {
+        localStorage.removeItem(STORAGE_KEY)
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable))
+      }
+    } catch {
+      // Ignore storage quota or private mode errors
+    }
+  }, [messages])
 
   const clearMessages = () => {
-    setMessages([]);
-    localStorage.removeItem('chatMessages');
-  };
+    setMessages([])
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch {
+      // Ignore storage errors
+    }
+  }
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return
+    const trimmed = input.trim()
+    if (!trimmed || isLoading) return
 
     setIsLoading(true)
-    const userMessage: Message = { sender: 'user', text: input }
-    setMessages((prev) => [...prev, userMessage])
+    const userMessage: Message = { sender: 'user', text: trimmed }
+    setMessages((prev) => [...prev.filter((m) => !m.isError), userMessage])
+    setInput('')
 
     try {
-      const response = await axios.post(`${apiUrl}`, { message: input });
-      const botMessage: Message = { sender: 'bot', text: response.data.reply || 'No response' };
-      setMessages((prev) => [...prev, botMessage]);
-    } catch (err) {
-      const errorMsg: Message = { sender: 'bot', text: 'Error contacting backend.' }
+      const response = await axios.post(apiUrl, { message: trimmed })
+      const botMessage: Message = {
+        sender: 'bot',
+        text: response.data?.reply || 'No response',
+      }
+      setMessages((prev) => [...prev, botMessage])
+    } catch (err: any) {
+      const errorMsg: Message = {
+        sender: 'bot',
+        text: err?.response?.data?.reply || 'Error contacting backend.',
+        isError: true,
+      }
       setMessages((prev) => [...prev, errorMsg])
     } finally {
       setIsLoading(false)
-      setInput('')
     }
   }
 
@@ -79,7 +168,12 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
             <div className="chatbot-messages">
               {messages.map((msg, idx) => (
                 <div key={idx} className={msg.sender === 'user' ? 'chatbot-message user' : 'chatbot-message bot'}>
-                  <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong> <span dangerouslySetInnerHTML={{ __html: marked(msg.text) }} />
+                  <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong>{' '}
+                  {msg.sender === 'user' ? (
+                    <span>{msg.text}</span>
+                  ) : (
+                    <span dangerouslySetInnerHTML={{ __html: renderBotMarkdown(msg.text) }} />
+                  )}
                 </div>
               ))}
               <div ref={messagesEndRef} />
@@ -90,11 +184,10 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onInput={(e) => setInput(e.currentTarget.value)}
-                onKeyPress={(e) => {
+                onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.nativeEvent.isComposing && !isLoading) {
-                    e.preventDefault();
-                    sendMessage();
+                    e.preventDefault()
+                    sendMessage()
                   }
                 }}
                 className="chatbot-input"
@@ -105,7 +198,7 @@ function App({ apiUrl = 'https://homin.dev/webchat-relay/chat' }) {
                 {isLoading ? 'Sending...' : 'Send'}
               </button>
               <button onClick={clearMessages} className="chatbot-clear-btn" title="Clear chat history">
-                X 
+                X
               </button>
             </div>
           </div>

@@ -1,31 +1,32 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App'
+import App, { DEFAULT_API_URL } from './App'
+
+export interface RenderWebchatOptions {
+    apiUrl?: string;
+}
 
 // 전역 window 객체에 renderWebchatWidget 함수 타입 선언
 declare global {
     interface Window {
-        renderWebchatWidget: (container?: HTMLElement) => void;
+        renderWebchatWidget: (container?: HTMLElement, options?: RenderWebchatOptions) => void;
     }
 }
 
-// 스타일 동적 추가
-const widgetCSS = `
+const currentScriptApiUrl =
+    (typeof document !== 'undefined' &&
+        (document.currentScript?.getAttribute('data-api-url') ||
+            document.querySelector('script[data-api-url]')?.getAttribute('data-api-url'))) ||
+    undefined;
+
+// 호스트 페이지용 스타일 (@font-face 및 컨테이너 위치)
+const hostCSS = `
     @font-face {
         font-family: 'GowunDodum';
         src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2108@1.1/GowunDodum-Regular.woff') format('woff');
         font-weight: normal;
         font-style: normal;
         font-display: swap;
-    }
-    #webchat-widget-container,
-    #webchat-widget-container * {
-        font-family: 'GowunDodum', sans-serif !important;
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-        margin-left: 0 !important;
-        margin-right: 0 !important;
-        text-align: left !important;
     }
     #webchat-widget-container {
         position: fixed;
@@ -34,6 +35,27 @@ const widgetCSS = `
         z-index: 1000;
         max-width: 100vw;
         max-height: 100vh;
+    }
+    @media (max-width: 600px) {
+        #webchat-widget-container {
+            bottom: 0;
+            right: 0;
+            left: 0;
+            width: 100vw;
+            max-width: 100vw;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            overflow-x: hidden;
+        }
+    }
+`;
+
+// 위젯 내부 스타일 (ShadowRoot 및 일반 컨테이너 겸용)
+const widgetCSS = `
+    #webchat-root,
+    #webchat-root * {
+        font-family: 'GowunDodum', sans-serif !important;
     }
     .chatbot-widget {
         background: white;
@@ -51,6 +73,7 @@ const widgetCSS = `
         font-family: 'GowunDodum', sans-serif !important;
         color: black;
         font-size: 16px;
+        text-align: left;
     }
     .chatbot-title, .chatbot-desc {
         margin: 0.5rem 0;
@@ -66,6 +89,9 @@ const widgetCSS = `
     }
     .chatbot-message {
         margin: 0.5rem 0;
+    }
+    .chatbot-message p {
+        margin: 0.25rem 0;
     }
     .chatbot-message.user {
         text-align: right;
@@ -102,7 +128,6 @@ const widgetCSS = `
         cursor: pointer;
         padding: 8px 12px;
         border-radius: 4px;
-        // margin-left: 8px;
         transition: background-color 0.2s;
     }
     .chatbot-clear-btn:hover {
@@ -125,17 +150,6 @@ const widgetCSS = `
         transition: bottom 0.3s ease;
     }
     @media (max-width: 600px) {
-        #webchat-widget-container {
-            bottom: 0;
-            right: 0;
-            left: 0;
-            width: 100vw;
-            max-width: 100vw;
-            display: flex;
-            justify-content: center;
-            align-items: flex-end;
-            overflow-x: hidden;
-        }
         .chatbot-widget {
             width: 92vw !important;
             max-width: 380px !important;
@@ -158,12 +172,19 @@ const widgetCSS = `
     }
 `;
 
-const style = document.createElement('style');
-style.textContent = widgetCSS;
-document.head.appendChild(style);
+function ensureHostStyle() {
+    if (!document.getElementById('webchat-host-style')) {
+        const style = document.createElement('style');
+        style.id = 'webchat-host-style';
+        style.textContent = hostCSS;
+        document.head.appendChild(style);
+    }
+}
 
 // 컨테이너 생성 (ShadowRoot 지원)
 function ensureWidgetContainerWithShadow() {
+    ensureHostStyle();
+
     let container = document.getElementById('webchat-widget-container');
     if (!container) {
         container = document.createElement('div');
@@ -171,7 +192,7 @@ function ensureWidgetContainerWithShadow() {
         document.body.appendChild(container);
     }
     // ShadowRoot 생성
-    let shadowRoot = (container as any).shadowRoot;
+    let shadowRoot = container.shadowRoot;
     if (!shadowRoot) {
         shadowRoot = container.attachShadow({ mode: 'open' });
     }
@@ -182,7 +203,7 @@ function ensureWidgetContainerWithShadow() {
         root.id = 'webchat-root';
         shadowRoot.appendChild(root);
     }
-    // App.css를 ShadowRoot에 style로 삽입
+    // 위젯 스타일을 ShadowRoot에 삽입
     if (!shadowRoot.getElementById('webchat-style')) {
         const styleTag = document.createElement('style');
         styleTag.id = 'webchat-style';
@@ -192,13 +213,34 @@ function ensureWidgetContainerWithShadow() {
     return root;
 }
 
+const roots = new WeakMap<Element, ReactDOM.Root>();
+
 // 전역 함수로 React 앱 렌더링 함수 노출 (ShadowRoot 지원)
-window.renderWebchatWidget = (container?: HTMLElement) => {
+window.renderWebchatWidget = (container?: HTMLElement, options?: RenderWebchatOptions) => {
+    ensureHostStyle();
+    if (container && !document.getElementById('webchat-style')) {
+        const styleTag = document.createElement('style');
+        styleTag.id = 'webchat-style';
+        styleTag.textContent = widgetCSS;
+        document.head.appendChild(styleTag);
+    }
+
     const target = container || ensureWidgetContainerWithShadow();
-    const root = ReactDOM.createRoot(target);
+    let root = roots.get(target);
+    if (!root) {
+        root = ReactDOM.createRoot(target);
+        roots.set(target, root);
+    }
+
+    const apiUrl =
+        options?.apiUrl ||
+        container?.getAttribute('data-api-url') ||
+        currentScriptApiUrl ||
+        DEFAULT_API_URL;
+
     root.render(
         <React.StrictMode>
-            <App />
+            <App apiUrl={apiUrl} />
         </React.StrictMode>
     );
 }
