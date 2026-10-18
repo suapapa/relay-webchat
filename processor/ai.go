@@ -73,8 +73,8 @@ func NewHominDevAI(ctx context.Context) (*HominDevAI, error) {
 					ai.WithSystem(preProcessSystemPrompt),
 					ai.WithPrompt(fmt.Sprintf(preProcessUserPromptFmt, input)),
 				)
-				if err != nil {
-					log.Printf("failed to find keywords: %s", err)
+				if err != nil || s == nil {
+					log.Printf("failed to find keywords: %v", err)
 					return Cmd{"/about", []string{}}, nil
 				}
 				return *s, nil

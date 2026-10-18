@@ -6,13 +6,17 @@ import (
 	"log"
 	"os"
 	"sort"
+	"sync"
 	"time"
 
 	ragkit "github.com/suapapa/go_ragkit"
 	ragkit_helper "github.com/suapapa/go_ragkit/helper"
 )
 
-var vstorePhrases ragkit.VectorStore
+var (
+	vstorePhrases ragkit.VectorStore
+	vstoreMu      sync.Mutex
+)
 
 func initVStorePhrases() error {
 	if vstorePhrases != nil {
@@ -33,26 +37,58 @@ func initVStorePhrases() error {
 	return nil
 }
 
+func resetVStorePhrases() {
+	if vstorePhrases != nil {
+		if closer, ok := vstorePhrases.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+		vstorePhrases = nil
+	}
+}
+
 func retrivePost(prompt string, cnt int) ([]*Post, error) {
+	vstoreMu.Lock()
+	defer vstoreMu.Unlock()
+
 	if err := initVStorePhrases(); err != nil {
 		return nil, err
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
 	log.Println("retrieving post with prompt:", prompt)
-	docs, err := vstorePhrases.RetrieveText(context.Background(), prompt, cnt, "title", "post_url", "tags", "date")
+	docs, err := vstorePhrases.RetrieveText(ctx, prompt, cnt, "title", "post_url", "tags", "date")
 	if err != nil {
-		return nil, fmt.Errorf("failed to search phrases: %w", err)
+		log.Printf("RetrieveText failed (%v), reconnecting vector store and retrying once...", err)
+		resetVStorePhrases()
+		if initErr := initVStorePhrases(); initErr != nil {
+			return nil, fmt.Errorf("failed to reconnect vector store: %w", initErr)
+		}
+		retryCtx, retryCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer retryCancel()
+		docs, err = vstorePhrases.RetrieveText(retryCtx, prompt, cnt, "title", "post_url", "tags", "date")
+		if err != nil {
+			return nil, fmt.Errorf("failed to search phrases: %w", err)
+		}
 	}
 
 	postMap := make(map[string]*Post)
 
 	for _, doc := range docs {
-		postUrl := doc.Metadata["post_url"].(string)
-		title := doc.Metadata["title"].(string)
-		dateStr := doc.Metadata["date"].(string)
-		date, err := time.Parse(time.RFC3339, dateStr)
-		if err != nil {
-			log.Printf("failed to parse date: %v", err)
+		postUrl, _ := doc.Metadata["post_url"].(string)
+		if postUrl == "" {
+			continue
+		}
+		title, _ := doc.Metadata["title"].(string)
+		dateStr, _ := doc.Metadata["date"].(string)
+		var date time.Time
+		if dateStr != "" {
+			var err error
+			date, err = time.Parse(time.RFC3339, dateStr)
+			if err != nil {
+				log.Printf("failed to parse date: %v", err)
+			}
 		}
 		var tags []string
 		if tagInterfaces, ok := doc.Metadata["tags"].([]interface{}); ok {
