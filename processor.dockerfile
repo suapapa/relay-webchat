@@ -1,7 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
-
-ENV GOTOOLCHAIN=auto
+FROM golang:1.27-alpine AS builder
 WORKDIR /app
 COPY processor/ ./processor/
 WORKDIR /app/processor
