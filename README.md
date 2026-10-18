@@ -28,9 +28,13 @@ npm run build
 2. `dist/index.html` 파일을 참고해 웹쳇 위젯을 추가할 페이지에 다음의 예제와 같이 추가.
 
 ```html
-</body>
+<body>
   ...
-  <script src="https://example.com/asset/script/webchat-widget.umd.js"></script>
+  <!-- data-api-url 생략 시 기본값: https://homin.dev/webchat-relay/chat -->
+  <script
+    src="https://example.com/asset/script/webchat-widget.umd.js"
+    data-api-url="https://homin.dev/webchat-relay/chat"
+  ></script>
 </body>
 ```
 
@@ -40,13 +44,15 @@ npm run build
 
 웹쳇 위젯으로 부터 받은 메세지를 웹소켓으로 연결되어 있는 프로세서 서버에 전달하여 처리 결과를 응답.
 
+설정은 [`relay/.env.example`](relay/.env.example)을 참고하세요 (`RELAY_APIKEY`, `ROOT_PATH`).
+
 ## Processor
 
 로컬 서버에서 호스팅 하는, Go로 작성된 대화 처리 서버.
 
-pgvector + OpenAI 호환 임베딩으로 블로그 검색을 수행하고, Genkit(Gemini)로 전처리를 할 수 있습니다.
+pgvector + OpenAI 호환 API로 블로그 임베딩 검색과 LLM 전처리를 수행합니다.
 
-설정은 [`.env.example`](.env.example)을 참고하세요 (`RELAY_APIKEY`, `PGVECTOR_CONN`, `OPENAI_*`).
+설정은 [`processor/.env.example`](processor/.env.example)을 참고하세요 (`RELAY_WS`, `RELAY_APIKEY`, `PGVECTOR_CONN`, `OPENAI_*`).
 
 ## Container images (GHCR)
 
