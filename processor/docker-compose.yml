@@ -1,0 +1,21 @@
+services:
+  processor:
+    build:
+      context: ..
+      dockerfile: processor.dockerfile
+    image: ghcr.io/suapapa/relay-webchat/processor:latest
+    command: ["-pre-process", "-retrive", "10"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RELAY_WS: ${RELAY_WS:-wss://homin.dev/webchat-relay/ws}
+      RELAY_APIKEY: ${RELAY_APIKEY:-}
+      PGVECTOR_CONN: ${PGVECTOR_CONN:?PGVECTOR_CONN is required}
+      PGVECTOR_TABLE_PHRASES: ${PGVECTOR_TABLE_PHRASES:-homin_dev_phrases_openai}
+      OPENAI_ENDPOINT: ${OPENAI_ENDPOINT:-https://api.openai.com/v1}
+      OPENAI_APIKEY: ${OPENAI_APIKEY:?OPENAI_APIKEY is required}
+      OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-text-embedding-3-small}
+      OPENAI_EMBED_DIM: ${OPENAI_EMBED_DIM:-1536}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
+    restart: unless-stopped

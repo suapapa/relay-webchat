@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -40,7 +41,7 @@ type wsIncomingMsg struct {
 func main() {
 	defer func() { log.Println("Exiting...") }()
 
-	flag.StringVar(&flagWebSocketServer, "ws", "ws://localhost:8080", "WebSocket server address")
+	flag.StringVar(&flagWebSocketServer, "ws", cmp.Or(os.Getenv("RELAY_WS"), "ws://localhost:8080"), "WebSocket server address")
 	flag.IntVar(&flagRetriveCnt, "retrive", 50, "Retrive count")
 	flag.BoolVar(&flagPromptPreProcess, "pre-process", false, "Pre-process prompt")
 	flag.Parse()
@@ -287,7 +288,7 @@ func main() {
 				var cmd Cmd
 				if !strings.HasPrefix(msg, "/") {
 					flowCtx, flowCancel := context.WithTimeout(ctx, processTimeout)
-					cmd, err = hominDevAI.PreProcessFLow.Run(flowCtx, msg)
+					cmd, err = hominDevAI.PreProcess(flowCtx, msg)
 					flowCancel()
 					if err != nil {
 						log.Printf("Failed to run intent flow: %v", err)
