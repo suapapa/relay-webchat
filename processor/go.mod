@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/firebase/genkit/go v0.5.3
 	github.com/gorilla/websocket v1.5.3
-	github.com/suapapa/go_ragkit v0.2.10
+	github.com/suapapa/go_ragkit v0.4.1
 )
 
 require (
@@ -91,5 +91,3 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/suapapa/go_ragkit => ../../go_ragkit

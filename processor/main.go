@@ -20,8 +20,6 @@ var (
 	flagWebSocketServer  string
 	flagRetriveCnt       int
 	flagPromptPreProcess bool
-	flagEmbedderType     string
-	flagSecretFile       string
 	hominDevAI           *HominDevAI
 )
 
@@ -31,17 +29,11 @@ func main() {
 	flag.StringVar(&flagWebSocketServer, "ws", "ws://localhost:8080", "WebSocket server address")
 	flag.IntVar(&flagRetriveCnt, "retrive", 50, "Retrive count")
 	flag.BoolVar(&flagPromptPreProcess, "pre-process", false, "Pre-process prompt")
-	flag.StringVar(&flagEmbedderType, "embedder", "ollama", "Embedder type (ollama, openai)")
-	flag.StringVar(&flagSecretFile, "secret", "/secret/token", "Secret file")
 	flag.Parse()
 
-	var secret string
-	secretB, err := os.ReadFile(flagSecretFile)
-	if err != nil {
-		fmt.Printf("WARN: failed to read secret: %v\n", err)
-	} else {
-		log.Println("using secret from file")
-		secret = strings.TrimSpace(string(secretB))
+	secret := strings.TrimSpace(os.Getenv("RELAY_APIKEY"))
+	if secret != "" {
+		log.Println("using RELAY_APIKEY from environment")
 	}
 
 	stat := &Stat{}
@@ -50,6 +42,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var err error
 	hominDevAI, err = NewHominDevAI(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create HominDevAI: %v", err)

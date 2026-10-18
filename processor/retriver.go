@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"time"
 
@@ -18,32 +19,24 @@ func initVStorePhrases() error {
 		return nil
 	}
 
+	tablePhrases := envOr("PGVECTOR_TABLE_PHRASES", "homin_dev_phrases_openai")
+	embedModel := envOr("OPENAI_EMBED_MODEL", ragkit_helper.DefaultOAIEmbedModel())
+
 	var err error
-	switch flagEmbedderType {
-	case "ollama":
-		vstorePhrases, err = ragkit_helper.NewWeaviateOllamaVectorStore(
-			"homin_dev_phrases_ollama", // vector DB class name
-			ragkit_helper.DefaultOllamaEmbedModel,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to create vector store: %w", err)
-		}
-	case "openai":
-		vstorePhrases, err = ragkit_helper.NewWeaviateOpenAIVectorStore(
-			"homin_dev_phrases_openai", // vector DB class name
-			ragkit_helper.DefaultOAIEmbedModel(),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to create vector store: %w", err)
-		}
-	default:
-		return fmt.Errorf("invalid embedder type: %s", flagEmbedderType)
+	vstorePhrases, err = ragkit_helper.NewPGVectorOpenAIVectorStore(
+		tablePhrases,
+		embedModel,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create vector store: %w", err)
 	}
 	return nil
 }
 
 func retrivePost(prompt string, cnt int) ([]*Post, error) {
-	initVStorePhrases()
+	if err := initVStorePhrases(); err != nil {
+		return nil, err
+	}
 
 	log.Println("retrieving post with prompt:", prompt)
 	docs, err := vstorePhrases.RetrieveText(context.Background(), prompt, cnt, "title", "post_url", "tags", "date")
@@ -90,10 +83,14 @@ func retrivePost(prompt string, cnt int) ([]*Post, error) {
 	}
 	sort.Sort(posts)
 
-	// yb, _ := yaml.Marshal(posts)
-	// log.Println(string(yb))
-
 	return posts, nil
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 type Post struct {

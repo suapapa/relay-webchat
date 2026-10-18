@@ -44,4 +44,13 @@ npm run build
 
 로컬 서버에서 호스팅 하는, Go로 작성된 대화 처리 서버.
 
-Ollama 등의 로컬 AI를 연결하여. 추가 서비스비용 없이 대화형 챗봇을 구현 가능.
+pgvector + OpenAI 호환 임베딩으로 블로그 검색을 수행하고, Genkit(Gemini)로 전처리를 할 수 있습니다.
+
+설정은 [`.env.example`](.env.example)을 참고하세요 (`RELAY_APIKEY`, `PGVECTOR_CONN`, `OPENAI_*`).
+
+## Container images (GHCR)
+
+native amd64/arm64 (QEMU 없음):
+
+- `ghcr.io/suapapa/relay-webchat/relay`
+- `ghcr.io/suapapa/relay-webchat/processor`

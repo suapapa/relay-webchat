@@ -1,6 +1,12 @@
-export WEAVIATE_ADDR="http://192.168.219.153:9035"
-# export OLLAMA_ADDR="http://192.168.219.140:11434" # homin-vraptor
-export OLLAMA_ADDR="http://192.168.219.146:11434" # homin-pc
+#!/bin/bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+set -a
+# shellcheck disable=SC1091
+[ -f ../.env ] && source ../.env
+[ -f .env ] && source .env
+set +a
 
 go build
-./processor -ws wss://homin.dev/webchat-relay/ws $@
+./processor -ws "${RELAY_WS:-wss://homin.dev/webchat-relay/ws}" "$@"

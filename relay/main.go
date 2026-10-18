@@ -1,8 +1,8 @@
 package main
 
 import (
+	"cmp"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -18,17 +18,13 @@ func main() {
 	// Set gin to release mode
 	gin.SetMode(gin.ReleaseMode)
 
-	var secret string
-	secretB, err := os.ReadFile("/secret/token")
-	if err != nil {
-		fmt.Printf("WARN: failed to read secret: %v\n", err)
-	} else {
-		log.Println("using secret from file")
-		secret = strings.TrimSpace(string(secretB))
+	secret := strings.TrimSpace(os.Getenv("RELAY_APIKEY"))
+	if secret != "" {
+		log.Println("using RELAY_APIKEY from environment")
 	}
 
 	flag.StringVar(&flagAddr, "addr", ":8080", "address to listen on")
-	flag.StringVar(&flagRootPath, "root", "/", "root path of webchat-widget")
+	flag.StringVar(&flagRootPath, "root", cmp.Or(os.Getenv("ROOT_PATH"), "/"), "root path of webchat-widget")
 	flag.Parse()
 
 	r := gin.Default()
