@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -23,10 +24,24 @@ var (
 	hominDevAI           *HominDevAI
 )
 
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = 25 * time.Second
+	processTimeout = 25 * time.Second
+	maxBackoff     = 30 * time.Second
+)
+
+type wsIncomingMsg struct {
+	conn    *websocket.Conn
+	msgType int
+	msg     []byte
+}
+
 func main() {
 	defer func() { log.Println("Exiting...") }()
 
-	flag.StringVar(&flagWebSocketServer, "ws", "ws://localhost:8080", "WebSocket server address")
+	flag.StringVar(&flagWebSocketServer, "ws", cmp.Or(os.Getenv("RELAY_WS"), "ws://localhost:8080"), "WebSocket server address")
 	flag.IntVar(&flagRetriveCnt, "retrive", 50, "Retrive count")
 	flag.BoolVar(&flagPromptPreProcess, "pre-process", false, "Pre-process prompt")
 	flag.Parse()
@@ -48,76 +63,106 @@ func main() {
 		log.Fatalf("Failed to create HominDevAI: %v", err)
 	}
 
-	var conn *websocket.Conn
-	var connMutex sync.Mutex
+	var (
+		conn       *websocket.Conn
+		connMutex  sync.Mutex
+		writeMutex sync.Mutex
+	)
 
-	connectWS := func() error {
+	getConn := func() *websocket.Conn {
 		connMutex.Lock()
 		defer connMutex.Unlock()
+		return conn
+	}
 
-		// Close existing connection if any
-		if conn != nil {
-			conn.Close()
+	closeConn := func(target *websocket.Conn) {
+		connMutex.Lock()
+		defer connMutex.Unlock()
+		if target != nil {
+			_ = target.Close()
+		}
+		if conn == target {
 			conn = nil
 		}
+	}
 
+	writeWS := func(target *websocket.Conn, msgType int, data []byte) error {
+		if target == nil {
+			return fmt.Errorf("no WebSocket connection available")
+		}
+		writeMutex.Lock()
+		defer writeMutex.Unlock()
+		if err := target.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+			return err
+		}
+		return target.WriteMessage(msgType, data)
+	}
+
+	connectWS := func() error {
 		reqHeader := http.Header{}
 		if secret != "" {
 			reqHeader.Set("Authorization", fmt.Sprintf("Bearer %s", secret))
 		}
 
-		var err error
-		conn, _, err = websocket.DefaultDialer.Dial(flagWebSocketServer, reqHeader)
+		dialer := websocket.Dialer{
+			Proxy:            http.ProxyFromEnvironment,
+			HandshakeTimeout: 10 * time.Second,
+		}
+
+		c, _, err := dialer.DialContext(ctx, flagWebSocketServer, reqHeader)
 		if err != nil {
 			return fmt.Errorf("failed to connect to WebSocket server: %v", err)
 		}
 
-		// Set connection parameters for better reliability
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-
-		// Set up ping/pong handler for the new connection
-		conn.SetPongHandler(func(appData string) error {
+		c.SetReadDeadline(time.Now().Add(pongWait))
+		c.SetPongHandler(func(appData string) error {
 			log.Println("Received pong")
-			// Reset read deadline on pong
-			connMutex.Lock()
-			if conn != nil {
-				conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-			}
-			connMutex.Unlock()
+			c.SetReadDeadline(time.Now().Add(pongWait))
 			return nil
 		})
+		defaultPingHandler := c.PingHandler()
+		c.SetPingHandler(func(appData string) error {
+			c.SetReadDeadline(time.Now().Add(pongWait))
+			return defaultPingHandler(appData)
+		})
+
+		connMutex.Lock()
+		oldConn := conn
+		conn = c
+		connMutex.Unlock()
+
+		if oldConn != nil && oldConn != c {
+			_ = oldConn.Close()
+		}
 
 		return nil
 	}
-
-	if err := connectWS(); err != nil {
-		log.Fatalf("%v", err)
-	}
-	defer func() {
-		connMutex.Lock()
-		if conn != nil {
-			conn.Close()
-		}
-		connMutex.Unlock()
-	}()
 
 	// get termination signals (systemctl restart sends SIGTERM, not os.Interrupt)
 	chCtrlC := make(chan os.Signal, 1)
 	signal.Notify(chCtrlC, os.Interrupt, syscall.SIGTERM)
 
-	msgChan := make(chan struct {
-		msgType int
-		msg     []byte
-		err     error
-	})
+	if err := connectWS(); err != nil {
+		log.Printf("Initial connection failed (%v), will retry in background...", err)
+	}
+	defer func() {
+		closeConn(getConn())
+	}()
 
-	// Start message reading goroutine
-	readErrRetryCnt, writeErrRetryCnt := 0, 0
+	msgChan := make(chan wsIncomingMsg)
 	stopReading := make(chan struct{})
+	var stopOnce sync.Once
+	stopAll := func() {
+		stopOnce.Do(func() {
+			close(stopReading)
+		})
+	}
 
+	// Start message reading and automatic reconnection goroutine
 	go func() {
 		defer close(msgChan)
+		backoff := time.Second
+
 		for {
 			select {
 			case <-stopReading:
@@ -125,79 +170,79 @@ func main() {
 			default:
 			}
 
-			connMutex.Lock()
-			currentConn := conn
-			connMutex.Unlock()
-
+			currentConn := getConn()
 			if currentConn == nil {
-				time.Sleep(1 * time.Second)
+				log.Printf("Attempting to connect to WebSocket server (%s)...", flagWebSocketServer)
+				if err := connectWS(); err != nil {
+					log.Printf("Reconnect failed: %v (retrying in %s)", err, backoff)
+					select {
+					case <-time.After(backoff):
+					case <-stopReading:
+						return
+					}
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+					continue
+				}
+				log.Printf("Successfully connected to WebSocket server")
+				backoff = time.Second
+				currentConn = getConn()
+				if currentConn == nil {
+					continue
+				}
+			}
+
+			currentConn.SetReadDeadline(time.Now().Add(pongWait))
+			msgType, msgBytes, err := currentConn.ReadMessage()
+			if err != nil {
+				select {
+				case <-stopReading:
+					return
+				default:
+				}
+
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					log.Printf("Connection closed by server (%v), reconnecting...", err)
+				} else {
+					log.Printf("Read error (%v), reconnecting...", err)
+				}
+				closeConn(currentConn)
+
+				select {
+				case <-time.After(backoff):
+				case <-stopReading:
+					return
+				}
 				continue
 			}
 
-			// Set read deadline for this read operation
-			currentConn.SetReadDeadline(time.Now().Add(60 * time.Second))
-			msgType, msgBytes, err := currentConn.ReadMessage()
-
+			backoff = time.Second
 			select {
-			case msgChan <- struct {
-				msgType int
-				msg     []byte
-				err     error
-			}{msgType, msgBytes, err}:
+			case msgChan <- wsIncomingMsg{
+				conn:    currentConn,
+				msgType: msgType,
+				msg:     msgBytes,
+			}:
 			case <-stopReading:
 				return
-			}
-
-			if err != nil {
-				log.Printf("Read error: %v", err)
-
-				// Check if it's a close error or network error
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-					log.Printf("Connection closed normally, reconnecting...")
-				} else {
-					log.Printf("Connection error, attempting reconnection...")
-				}
-
-				// Attempt reconnection
-				readErrRetryCnt++
-				if readErrRetryCnt > 5 {
-					log.Fatalf("Failed to reconnect after 5 attempts: %v", err)
-				}
-
-				// Wait before reconnecting
-				time.Sleep(time.Duration(readErrRetryCnt) * time.Second)
-
-				if err := connectWS(); err != nil {
-					log.Printf("Failed to reconnect: %v", err)
-					continue
-				}
-
-				log.Printf("Successfully reconnected")
-				readErrRetryCnt = 0
-			} else {
-				readErrRetryCnt = 0
 			}
 		}
 	}()
 
-	// Pong handler is set up in connectWS function
-
-	// Send periodic ping (every 30 seconds)
+	// Send periodic ping
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(pingPeriod)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				connMutex.Lock()
-				currentConn := conn
-				connMutex.Unlock()
-
+				currentConn := getConn()
 				if currentConn != nil {
-					currentConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-					if err := currentConn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					if err := writeWS(currentConn, websocket.PingMessage, nil); err != nil {
 						log.Printf("Ping error: %v", err)
-						// Don't return, keep trying
+						closeConn(currentConn)
 					}
 				}
 			case <-stopReading:
@@ -209,35 +254,26 @@ func main() {
 	for {
 		select {
 		case <-chCtrlC:
-			log.Println("Ctrl-C pressed, exiting...")
-			// Signal stop to reading goroutine
-			close(stopReading)
-			// Close WebSocket connection gracefully
-			connMutex.Lock()
-			if conn != nil {
-				conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-				conn.Close()
+			log.Println("Termination signal received, exiting...")
+			stopAll()
+			currentConn := getConn()
+			if currentConn != nil {
+				_ = writeWS(currentConn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				closeConn(currentConn)
 			}
-			connMutex.Unlock()
 			cancel()
 			return
 		case <-ctx.Done():
 			log.Println("Context canceled, exiting...")
-			close(stopReading)
+			stopAll()
 			return
 		case msgData, ok := <-msgChan:
 			if !ok {
 				log.Println("Message channel closed, exiting...")
 				return
 			}
-			if msgData.err != nil {
-				log.Printf("Connection error: %v", msgData.err)
-				time.Sleep(1 * time.Second)
-				continue
-			}
 
-			msg := string(msgData.msg)
-			msg = strings.TrimSpace(msg)
+			msg := strings.TrimSpace(string(msgData.msg))
 
 			var reply string
 			if len([]rune(msg)) > 200 {
@@ -245,16 +281,18 @@ func main() {
 				reply = "메시지가 너무 길어요. 200자 이하로 짧게 줄여주세요."
 			} else if len(msg) == 0 {
 				log.Printf("Empty message")
-				continue
+				reply = makeAboutReply()
 			} else {
 				log.Printf("Received message: %s", msg)
 
 				var cmd Cmd
 				if !strings.HasPrefix(msg, "/") {
-					cmd, err = hominDevAI.PreProcessFLow.Run(context.Background(), msg)
+					flowCtx, flowCancel := context.WithTimeout(ctx, processTimeout)
+					cmd, err = hominDevAI.PreProcess(flowCtx, msg)
+					flowCancel()
 					if err != nil {
 						log.Printf("Failed to run intent flow: %v", err)
-						return
+						cmd = Cmd{Action: "/search"}
 					}
 				} else {
 					msgParts := strings.Split(msg, " ")
@@ -273,7 +311,8 @@ func main() {
 					posts, err := retrivePost(searchKeywords, flagRetriveCnt)
 					if err != nil {
 						log.Printf("Failed to retrive post for keywords, %s: %v", searchKeywords, err)
-						return
+						reply = "검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+						break
 					}
 					stat.TotalKeywordCnt++
 					reply = fmt.Sprintf("%s 에 대한 검색 결과:\n%s", searchKeywords, makePostReply(posts))
@@ -281,7 +320,8 @@ func main() {
 					posts, err := retrivePost(msg, flagRetriveCnt)
 					if err != nil {
 						log.Printf("Failed to retrive post for msg, %s: %v", msg, err)
-						return
+						reply = "검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+						break
 					}
 
 					stat.TotalSearchCnt++
@@ -304,34 +344,9 @@ func main() {
 				}
 			}
 
-			connMutex.Lock()
-			currentConn := conn
-			connMutex.Unlock()
-
-			if currentConn != nil {
-				currentConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-				if err := currentConn.WriteMessage(msgData.msgType, []byte(reply)); err != nil {
-					log.Printf("Write error: %v", err)
-					writeErrRetryCnt++
-					if writeErrRetryCnt > 3 {
-						log.Printf("Failed to write after 3 attempts, attempting reconnection: %v", err)
-						// Trigger reconnection
-						connMutex.Lock()
-						if conn != nil {
-							conn.Close()
-							conn = nil
-						}
-						connMutex.Unlock()
-						time.Sleep(1 * time.Second)
-						if err := connectWS(); err != nil {
-							log.Printf("Failed to reconnect after write error: %v", err)
-						}
-					}
-				} else {
-					writeErrRetryCnt = 0
-				}
-			} else {
-				log.Printf("No connection available for writing")
+			if err := writeWS(msgData.conn, msgData.msgType, []byte(reply)); err != nil {
+				log.Printf("Write error: %v", err)
+				closeConn(msgData.conn)
 			}
 		}
 	} // for

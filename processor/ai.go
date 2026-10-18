@@ -1,137 +1,98 @@
 package main
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/core"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
+	oai "github.com/openai/openai-go"
+	oai_option "github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/shared"
 )
 
+const defaultChatModel = "gpt-4o-mini"
+
 type HominDevAI struct {
-	PreProcessFLow *core.Flow[string, Cmd, struct{}]
-	// SearchPostFlow *core.Flow[string, Result, struct{}]
+	client *oai.Client
+	model  string
 
 	mu sync.Mutex
 }
 
-func NewHominDevAI(ctx context.Context) (*HominDevAI, error) {
-	// o := &ollama_plugin.Ollama{
-	// 	ServerAddress: cmp.Or(os.Getenv("OLLAMA_ADDR"), "http://localhost:11434"),
-	// }
-	// g, err := genkit.Init(
-	// 	ctx,
-	// 	genkit.WithPlugins(o),
-	// 	genkit.WithDefaultModel("ollama/qwen3"),
-	// )
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to initialize genkit: %w", err)
-	// }
-
-	// o.DefineModel(
-	// 	g,
-	// 	ollama_plugin.ModelDefinition{
-	// 		Name: "qwen3",
-	// 		Type: "chat",
-	// 	},
-	// 	&ai.ModelInfo{
-	// 		Label: "QWEN 3",
-	// 		Supports: &ai.ModelSupports{
-	// 			Multiturn:  true,
-	// 			SystemRole: true,
-	// 			Media:      true,
-	// 			Tools:      false,
-	// 		},
-	// 	},
-	// )
-
-	g, err := genkit.Init(ctx,
-		genkit.WithPlugins(
-			&googlegenai.GoogleAI{},
-		),
-		genkit.WithDefaultModel("googleai/gemini-2.0-flash"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Genkit: %w", err)
+func NewHominDevAI(_ context.Context) (*HominDevAI, error) {
+	opts := []oai_option.RequestOption{
+		oai_option.WithAPIKey(os.Getenv("OPENAI_APIKEY")),
+	}
+	if ep := os.Getenv("OPENAI_ENDPOINT"); ep != "" {
+		opts = append(opts, oai_option.WithBaseURL(ep))
 	}
 
-	ret := &HominDevAI{}
+	client := oai.NewClient(opts...)
+	model := cmp.Or(os.Getenv("OPENAI_CHAT_MODEL"), defaultChatModel)
 
-	ret.PreProcessFLow = genkit.DefineFlow(
-		g, "preProcessFlow",
-		func(ctx context.Context, input string) (Cmd, error) {
-			ret.mu.Lock()
-			defer ret.mu.Unlock()
+	return &HominDevAI{
+		client: &client,
+		model:  model,
+	}, nil
+}
 
-			if flagPromptPreProcess {
-				s, _, err := genkit.GenerateData[Cmd](
-					ctx, g,
-					ai.WithSystem(preProcessSystemPrompt),
-					ai.WithPrompt(fmt.Sprintf(preProcessUserPromptFmt, input)),
-				)
-				if err != nil {
-					log.Printf("failed to find keywords: %s", err)
-					return Cmd{"/about", []string{}}, nil
-				}
-				return *s, nil
-			} else {
-				return Cmd{"/search", []string{}}, nil
-			}
+func (a *HominDevAI) PreProcess(ctx context.Context, input string) (Cmd, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if !flagPromptPreProcess {
+		return Cmd{Action: "/search", Args: []string{}}, nil
+	}
+
+	resp, err := a.client.Chat.Completions.New(ctx, oai.ChatCompletionNewParams{
+		Model: a.model,
+		Messages: []oai.ChatCompletionMessageParamUnion{
+			oai.SystemMessage(preProcessSystemPrompt),
+			oai.UserMessage(fmt.Sprintf(preProcessUserPromptFmt, input)),
 		},
-	)
-
-	/*
-		searchPostFlow := genkit.DefineFlow(
-			g, "searchPostFlow",
-			func(ctx context.Context, input string) (Result, error) {
-				ret.mu.Lock()
-				defer ret.mu.Unlock()
-
-				log.Printf("searchPostFlow: %s", input)
-
-				postCandidates, err := retrivePost(input, flagRetriveCnt)
-				if err != nil {
-					return Result{}, fmt.Errorf("failed to retrieve post: %w", err)
-				}
-
-				if len(postCandidates) == 0 {
-					log.Printf("no post candidates found")
-					return Result{}, nil
-				}
-
-				genkitDocs := make([]*ai.Document, 0, len(postCandidates))
-				for _, post := range postCandidates {
-					yamlPost, err := yaml.Marshal(post)
-					if err != nil {
-						log.Printf("failed to marshal post: %s", err)
-						continue
-					}
-					genkitDocs = append(genkitDocs, &ai.Document{
-						Content: []*ai.Part{ai.NewTextPart(string(yamlPost))},
-					})
-				}
-
-				r, _, err := genkit.GenerateData[Result](
-					ctx, g,
-					ai.WithDocs(genkitDocs...),
-					ai.WithSystem(searchSystemPrompt),
-					ai.WithPrompt(fmt.Sprintf(searchUserPromptFmt, input)),
-				)
-				if err != nil {
-					return Result{}, fmt.Errorf("failed to generate search result: %w", err)
-				}
-
-				return *r, nil
+		ResponseFormat: oai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   "cmd",
+					Strict: oai.Bool(true),
+					Schema: cmdJSONSchema,
+				},
 			},
-		)
-		ret.SearchPostFlow = searchPostFlow
-	*/
+		},
+	})
+	if err != nil {
+		log.Printf("failed to find keywords: %v", err)
+		return Cmd{Action: "/about", Args: []string{}}, nil
+	}
+	if len(resp.Choices) == 0 {
+		log.Printf("failed to find keywords: empty choices")
+		return Cmd{Action: "/about", Args: []string{}}, nil
+	}
 
-	return ret, nil
+	raw := extractJSON(resp.Choices[0].Message.Content)
+	var cmd Cmd
+	if err := json.Unmarshal([]byte(raw), &cmd); err != nil {
+		log.Printf("failed to parse command JSON (%s): %v", raw, err)
+		return Cmd{Action: "/about", Args: []string{}}, nil
+	}
+	return cmd, nil
+}
+
+func extractJSON(s string) string {
+	if idx := strings.Index(s, "</think>"); idx != -1 {
+		s = s[idx+len("</think>"):]
+	}
+	start := strings.IndexByte(s, '{')
+	end := strings.LastIndexByte(s, '}')
+	if start != -1 && end != -1 && end >= start {
+		return s[start : end+1]
+	}
+	return strings.TrimSpace(s)
 }
 
 type Result struct {
@@ -141,6 +102,24 @@ type Result struct {
 type Cmd struct {
 	Action string   `json:"action" yaml:"action"` // search, smallchat
 	Args   []string `json:"args" yaml:"args"`
+}
+
+var cmdJSONSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"action": map[string]any{
+			"type": "string",
+			"enum": []string{"/keyword", "/smallchat", "/about"},
+		},
+		"args": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "string",
+			},
+		},
+	},
+	"required":             []string{"action", "args"},
+	"additionalProperties": false,
 }
 
 var (
@@ -174,6 +153,7 @@ smallchat 을 할 때는 사용자가 너를 블로그 검색에 사용하도록
   - /about: 봇의 정보를 출력해야 할 때
 
 출력 규칙:
+- 반드시 {"action": "/keyword", "args": ["..."]} 형태의 JSON 객체로만 출력한다.
 - action 필드에는 오직 행동 이름(/keyword, /smallchat, /about)만 출력한다.
 - /smallchat 행동에 대해서는 적절한 대꾸를 각 줄을 args의 각 요소로 입력한다.
 - /keyword 행동에 대해서는 사용자가 궁금해 하는 키워드를을 args의 각 요소로 입력한다.
@@ -185,3 +165,4 @@ smallchat 을 할 때는 사용자가 너를 블로그 검색에 사용하도록
 - 행동 이름은 반드시 / 로 시작하는 소문자 단어로 출력한다.
 `
 )
+
