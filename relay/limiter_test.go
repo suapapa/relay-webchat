@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,5 +100,25 @@ func TestSetupCORS(t *testing.T) {
 	r.ServeHTTP(wDisallowed, reqDisallowed)
 	if wDisallowed.Code != http.StatusForbidden {
 		t.Errorf("expected 403 for disallowed origin preflight, got %d", wDisallowed.Code)
+	}
+}
+
+func TestChatHandler_NoProcessorReturns503(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	relay := NewRelay()
+	r := gin.New()
+	r.POST("/chat", relay.ChatHandler)
+
+	req, _ := http.NewRequest(http.MethodPost, "/chat", strings.NewReader(`{"message":"/start"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "No processor connection") {
+		t.Errorf("expected body to contain 'No processor connection', got %s", w.Body.String())
 	}
 }

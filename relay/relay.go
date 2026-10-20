@@ -69,7 +69,7 @@ func (r *Relay) ChatHandler(c *gin.Context) {
 	}
 
 	if r.getProcessor() == nil {
-		c.JSON(http.StatusOK, ChatResponse{
+		c.JSON(http.StatusServiceUnavailable, ChatResponse{
 			Reply: "No processor connection",
 		})
 		return
@@ -91,7 +91,7 @@ func (r *Relay) ChatHandler(c *gin.Context) {
 		MsgID:    uuid.New().String(),
 		Content:  req.Message,
 		MsgTS:    time.Now(),
-		ReplyCh:  make(chan string, 1),
+		ReplyCh:  make(chan MsgReply, 1),
 		Ctx:      ctx,
 	}
 
@@ -105,9 +105,13 @@ func (r *Relay) ChatHandler(c *gin.Context) {
 	}
 
 	select {
-	case reply := <-msg.ReplyCh:
-		c.JSON(http.StatusOK, ChatResponse{
-			Reply: reply,
+	case res := <-msg.ReplyCh:
+		status := res.Status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		c.JSON(status, ChatResponse{
+			Reply: res.Reply,
 		})
 	case <-ctx.Done():
 		c.JSON(http.StatusRequestTimeout, ChatResponse{
@@ -230,7 +234,7 @@ func (r *Relay) handleWebSocket(c *gin.Context) {
 
 			if err := client.WriteMessage(websocket.TextMessage, []byte(msg.Content)); err != nil {
 				log.Printf("Write error: %v", err)
-				msg.Reply("Failed to send message to processor")
+				msg.ReplyWithStatus(http.StatusBadGateway, "Failed to send message to processor")
 				return
 			}
 
@@ -245,16 +249,16 @@ func (r *Relay) handleWebSocket(c *gin.Context) {
 					if err := client.WritePing(); err != nil {
 						log.Printf("Ping error: %v", err)
 						replyTimer.Stop()
-						msg.Reply("Failed to receive response from processor")
+						msg.ReplyWithStatus(http.StatusBadGateway, "Failed to receive response from processor")
 						return
 					}
 				case <-client.done:
 					replyTimer.Stop()
-					msg.Reply("Failed to receive response from processor")
+					msg.ReplyWithStatus(http.StatusBadGateway, "Failed to receive response from processor")
 					return
 				case <-replyTimer.C:
 					log.Printf("Timeout waiting for processor response")
-					msg.Reply("Failed to receive response from processor")
+					msg.ReplyWithStatus(http.StatusGatewayTimeout, "Failed to receive response from processor")
 					return
 				}
 			}
@@ -281,19 +285,28 @@ func (r *Relay) getProcessor() *wsConn {
 	return r.processorConn
 }
 
+type MsgReply struct {
+	Status int
+	Reply  string
+}
+
 type Msg struct {
 	SrcIP          string
 	ClientID       string
 	MsgID          string
 	Content        string
-	ReplyCh        chan string
+	ReplyCh        chan MsgReply
 	Ctx            context.Context
 	MsgTS, ReplyTS time.Time
 }
 
 func (m *Msg) Reply(reply string) {
+	m.ReplyWithStatus(http.StatusOK, reply)
+}
+
+func (m *Msg) ReplyWithStatus(status int, reply string) {
 	select {
-	case m.ReplyCh <- reply:
+	case m.ReplyCh <- MsgReply{Status: status, Reply: reply}:
 	default:
 	}
 }

@@ -15,6 +15,20 @@ export interface AppProps {
 const STORAGE_KEY = 'chatMessages'
 export const DEFAULT_API_URL = 'https://homin.dev/webchat-relay/chat'
 
+const ERROR_REPLIES = new Set([
+  'No processor connection',
+  'Failed to send message to processor',
+  'Failed to receive response from processor',
+  'Invalid response format from processor',
+  'Apologies, I am unable to complete the request.',
+  'Error contacting backend.',
+  'No response',
+])
+
+function isErrorReply(text: string): boolean {
+  return ERROR_REPLIES.has(text.trim())
+}
+
 function loadSavedMessages(): Message[] {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -27,7 +41,8 @@ function loadSavedMessages(): Message[] {
         typeof m === 'object' &&
         (m.sender === 'user' || m.sender === 'bot') &&
         typeof m.text === 'string' &&
-        !m.isError
+        !m.isError &&
+        !(m.sender === 'bot' && isErrorReply(m.text))
     )
   } catch {
     return []
@@ -74,9 +89,11 @@ function App({ apiUrl = DEFAULT_API_URL }: AppProps) {
       .post(apiUrl, { message: '/start' })
       .then((response) => {
         if (cancelled) return
+        const replyText = response.data?.reply || 'No response'
         const botMessage: Message = {
           sender: 'bot',
-          text: response.data?.reply || 'No response',
+          text: replyText,
+          isError: isErrorReply(replyText),
         }
         setMessages((prev) => (prev.length === 0 ? [botMessage] : prev))
       })
@@ -109,7 +126,7 @@ function App({ apiUrl = DEFAULT_API_URL }: AppProps) {
 
   useEffect(() => {
     try {
-      const persistable = messages.filter((m) => !m.isError)
+      const persistable = messages.filter((m) => !m.isError && !(m.sender === 'bot' && isErrorReply(m.text)))
       if (persistable.length === 0) {
         localStorage.removeItem(STORAGE_KEY)
       } else {
@@ -135,14 +152,16 @@ function App({ apiUrl = DEFAULT_API_URL }: AppProps) {
 
     setIsLoading(true)
     const userMessage: Message = { sender: 'user', text: trimmed }
-    setMessages((prev) => [...prev.filter((m) => !m.isError), userMessage])
+    setMessages((prev) => [...prev.filter((m) => !m.isError && !(m.sender === 'bot' && isErrorReply(m.text))), userMessage])
     setInput('')
 
     try {
       const response = await axios.post(apiUrl, { message: trimmed })
+      const replyText = response.data?.reply || 'No response'
       const botMessage: Message = {
         sender: 'bot',
-        text: response.data?.reply || 'No response',
+        text: replyText,
+        isError: isErrorReply(replyText),
       }
       setMessages((prev) => [...prev, botMessage])
     } catch (err: any) {
@@ -206,7 +225,10 @@ function App({ apiUrl = DEFAULT_API_URL }: AppProps) {
         <button
           className="chatbot-toggle-btn"
           style={{ bottom: open ? '70vh' : '24px' }}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => {
+            setMessages((prev) => prev.filter((m) => !m.isError && !(m.sender === 'bot' && isErrorReply(m.text))))
+            setOpen((o) => !o)
+          }}
         >
           {open ? '×' : '🍀'}
         </button>
